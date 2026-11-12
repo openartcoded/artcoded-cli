@@ -50,7 +50,7 @@ docker run --rm -it -v artcoded:/data nbittich/artcoded-cli init
 docker run --rm -it -v artcoded:/data nbittich/artcoded-cli dashboard
 ```
 
-From the sources (Go 1.24):
+From the sources (Go 1.26+):
 
 ```sh
 make build          # ./artcoded
@@ -228,10 +228,43 @@ help
 /from 32471112233 help                # someone else (only the numbers of WHATSAPP_ALLOWED get an answer)
 ```
 
+Then for real: the bot is a linked device of your own WhatsApp (like WhatsApp Web, no Business API).
+
+```sh
+ENABLE_WHATSAPP_BOT=true artcoded bot          # first time: a QR code, scan it in
+                                               # WhatsApp > Settings > Linked devices > Link a device
+ENABLE_WHATSAPP_BOT=true artcoded bot --phone 32470123456   # or a pairing code to type on the phone
+artcoded bot status | logout
+```
+
+The bot answers you in your "message yourself" chat, and the numbers of `WHATSAPP_ALLOWED` in your chat with
+them (they write to you; the answers come from your account). Everything else is ignored: other chats,
+groups, the messages sent while the bot was down.
+
+In docker the image runs `artcoded bot`; disabled, it just waits, so `docker exec` works:
+
+```yaml
+  cli:
+    image: nbittich/artcoded-cli:latest
+    restart: always
+    environment:
+      ENABLE_WHATSAPP_BOT: "true"
+      WHATSAPP_ALLOWED: ""
+    volumes:
+      - ./data/cli:/data          # configuration, tokens, whatsapp session
+```
+
+```sh
+docker compose exec cli artcoded login     # once: an offline token, renewed as long as it is used
+docker compose logs -f cli                 # the QR code, the first time
+```
+
 | variable | |
 |---|---|
-| `ENABLE_WHATSAPP_BOT=true` | without it `artcoded bot` does not start |
+| `ENABLE_WHATSAPP_BOT=true` | without it `artcoded bot` does not start (in a container: it waits) |
 | `WHATSAPP_ALLOWED` | other numbers allowed to use the bot, in their own chat with it: `32471112233,32472...` |
+| `WHATSAPP_SESSION` | the session file (default `~/.local/share/artcoded/whatsapp.db`, `/data/whatsapp.db` in docker) |
+| `WHATSAPP_LOG_LEVEL` | `DEBUG`, `INFO`, `WARN` (default), `ERROR` |
 
 ## Configuration
 

@@ -175,7 +175,15 @@ func (a *Auth) PasswordLogin(username, password string) (*Tokens, error) {
 	if username == "" || password == "" {
 		return nil, errors.New("username and password are required for login_method: password")
 	}
-	return a.tokenRequest(url.Values{"grant_type": {"password"}, "username": {username}, "password": {password}, "scope": {"openid"}})
+	// an offline token: not tied to the sso session (idle 30 min / max 10 h by default), it lives as long
+	// as it is used (offline session idle, 30 days by default): a bot stays logged in
+	t, err := a.tokenRequest(url.Values{"grant_type": {"password"}, "username": {username}, "password": {password}, "scope": {"openid offline_access"}})
+	var oe *oauthError
+	if errors.As(err, &oe) && (oe.Code == "invalid_scope" || strings.Contains(strings.ToLower(oe.Description), "offline")) {
+		// the client or the user may not have offline_access: a normal session
+		return a.tokenRequest(url.Values{"grant_type": {"password"}, "username": {username}, "password": {password}, "scope": {"openid"}})
+	}
+	return t, err
 }
 
 func (a *Auth) Refresh(t *Tokens) (*Tokens, error) {

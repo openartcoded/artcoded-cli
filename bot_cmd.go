@@ -12,32 +12,33 @@ import (
 	"time"
 )
 
-const botUsage = `artcoded bot: the cli as a WhatsApp bot
-
-Usage:
-  artcoded bot --console        try the bot in this terminal (a fake WhatsApp)
-  artcoded bot                  the WhatsApp bot (needs ENABLE_WHATSAPP_BOT=true)
-
-Environment:
-  ENABLE_WHATSAPP_BOT=true      without it, the bot does not start (the console works anyway)
-  WHATSAPP_ALLOWED=32470...,..  numbers allowed to talk to the bot besides yourself (comma separated)
-
-Talk to the bot in your "message yourself" chat: help, invoices list, dashboard...
-Send a file without text: the bot asks what it is for (expense, document...).
-In the console:
-  /file <path> [caption]        send a file (several paths: quote them, one /file per line within 3s = one batch)
-  /from <number> <text>         a message from another number (to try WHATSAPP_ALLOWED)
-  /quit                         stop
-`
-
 func botAllowedEnv() []string {
 	return strings.FieldsFunc(os.Getenv("WHATSAPP_ALLOWED"), func(r rune) bool { return r == ',' || r == ';' || r == ' ' })
 }
 
 func runBot(c *Ctx, cfgPath string) error {
-	if c.boolFlag("help") {
-		fmt.Fprint(stdout, botUsage)
+	sub, _ := c.pos()
+	if c.boolFlag("help") || sub == "help" {
+		fmt.Fprint(stdout, waUsage)
 		return nil
+	}
+	switch sub {
+	case "status":
+		return waStatus()
+	case "logout", "unlink":
+		return waLogout()
+	case "":
+	default:
+		return fmt.Errorf("unknown: artcoded bot %s (artcoded bot --help)", sub)
+	}
+	enabled, _ := parseBool(os.Getenv("ENABLE_WHATSAPP_BOT"))
+	if !enabled && !c.boolFlag("console") {
+		msg := "the WhatsApp bot is disabled: set ENABLE_WHATSAPP_BOT=true (or try it with: artcoded bot --console)"
+		if runAsService() {
+			// a service (docker): stays up for docker exec instead of restarting in a loop
+			return waitForever(msg + "; waiting (docker exec works)")
+		}
+		return errors.New(msg)
 	}
 	if _, err := loadConfig(cfgPath); err != nil {
 		return fmt.Errorf("the bot uses the configuration of the cli: %w (run 'artcoded init' first)", err)
@@ -45,10 +46,8 @@ func runBot(c *Ctx, cfgPath string) error {
 	if c.boolFlag("console") {
 		return runBotConsole(cfgPath, os.Stdin, os.Stdout)
 	}
-	if on, _ := parseBool(os.Getenv("ENABLE_WHATSAPP_BOT")); !on {
-		return errors.New("the WhatsApp bot is disabled: set ENABLE_WHATSAPP_BOT=true (or try it with: artcoded bot --console)")
-	}
-	return errors.New("the WhatsApp connection is not there yet: try artcoded bot --console")
+	phone, _ := c.flag("phone")
+	return runWhatsApp(cfgPath, phone)
 }
 
 // consoleTransport: WhatsApp in a terminal, to try the bot
@@ -147,4 +146,14 @@ func runBotConsole(cfgPath string, in io.Reader, out io.Writer) error {
 		e.Handle(m)
 	}
 	return sc.Err()
+}
+
+// runAsService: started by docker / systemd rather than typed in a terminal
+func runAsService() bool {
+	if !isTerminal(os.Stdout) {
+		return true
+	}
+	in, err1 := os.Stdin.Stat()
+	null, err2 := os.Stat(os.DevNull)
+	return err1 == nil && err2 == nil && os.SameFile(in, null)
 }
