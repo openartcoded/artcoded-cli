@@ -6,15 +6,27 @@
 #   ./release.sh v1.5.0-rc1 a given version (with a "-": a pre-release)
 set -eu
 
-fail() { printf 'release: %s\n' "$*" >&2; exit 1; }
+fail() { failed=1; printf 'release: %s\n' "$*" >&2; exit 1; }
+# never stop silently: a command failing without a message still says something
+trap 'status=$?; [ "$status" -eq 0 ] || [ -n "${failed:-}" ] || printf "release: stopped (exit %s); to see where: sh -x ./release.sh\n" "$status" >&2' EXIT
 
 cd "$(dirname "$0")"
 bump="${1:-patch}"
 
 [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || fail "not on main"
 [ -z "$(git status --porcelain)" ] || fail "uncommitted changes"
-git fetch --quiet --tags origin main
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main is not in sync with origin/main (pull / push first)"
+# --force: the edge tag moves on every push to main, a stale local copy must not stop the fetch
+git fetch --quiet --force --tags origin main || fail "git fetch origin failed"
+behind="$(git rev-list --count HEAD..origin/main)"
+ahead="$(git rev-list --count origin/main..HEAD)"
+[ "$behind" -eq 0 ] || fail "main is $behind commit(s) behind origin/main: git pull --rebase first"
+if [ "$ahead" -gt 0 ]; then
+  # commits not pushed yet (e.g. a patch just applied): the tag must be on a pushed commit
+  git log --oneline origin/main..HEAD
+  printf '\n%s commit(s) not pushed yet. Push main first? [y/N] ' "$ahead"
+  read -r answer || answer=""
+  case "$answer" in y | Y | yes) git push origin main ;; *) fail "push main first" ;; esac
+fi
 
 last="$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -v -- - | head -n1)"
 last="${last:-v0.0.0}"
@@ -31,7 +43,10 @@ esac
 git rev-parse -q --verify "refs/tags/$next" >/dev/null && fail "$next already exists"
 
 echo "running the tests..."
-make test >/dev/null || fail "tests fail"
+if ! out="$(make test 2>&1)"; then
+  printf '%s\n' "$out" | tail -n 40 >&2
+  fail "tests fail"
+fi
 
 printf 'last release: %s\nnew release:  %s\n\n' "$last" "$next"
 git log --oneline "$last..HEAD" 2>/dev/null || git log --oneline
