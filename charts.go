@@ -54,6 +54,9 @@ func axisLabel(v float64, unit string) string {
 
 // columnChart: vertical bars, eighth blocks on top, labels under them (one or two characters each)
 func columnChart(labels []string, values []float64, height int, unit string, color func(string) string) string {
+	if bot != nil {
+		return chatColumns(labels, values, unit)
+	}
 	maxV := 0.0
 	for _, v := range values {
 		maxV = max(maxV, v)
@@ -119,6 +122,9 @@ var seriesColors = []func(string) string{
 // lineChart draws series on a braille canvas: every character holds 2 x 4 dots.
 // x: the index of the values (spread over the width), y: from 0 to the biggest value.
 func lineChart(series []Series, labels []string, width, height int, unit string) string {
+	if bot != nil {
+		return chatLines(series, labels, unit)
+	}
 	n, maxV := 0, 0.0
 	for _, s := range series {
 		n = max(n, len(s.Values))

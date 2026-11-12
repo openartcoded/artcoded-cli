@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -47,8 +48,19 @@ func ansi(code, s string) string {
 	}
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
-func bold(s string) string   { return ansi("1", s) }
-func dim(s string) string    { return ansi("2", s) }
+func bold(s string) string {
+	if bot != nil {
+		return chatStyle(s, "*")
+	}
+	return ansi("1", s)
+}
+
+func dim(s string) string {
+	if bot != nil {
+		return chatStyle(s, "_")
+	}
+	return ansi("2", s)
+}
 func green(s string) string  { return ansi("32", s) }
 func red(s string) string    { return ansi("31", s) }
 func yellow(s string) string { return ansi("33", s) }
@@ -59,7 +71,13 @@ func warn(format string, a ...any) { fmt.Fprintln(stderr, yellow("! ")+fmt.Sprin
 
 // ask a value, def shown in brackets and returned on enter.
 func ask(label, def string) (string, error) {
-	if def != "" {
+	if bot != nil {
+		printPrompt(bold(label))
+		chatHint = ". for nothing"
+		if def != "" {
+			chatHint = ". keeps “" + truncate(def, 60) + "”"
+		}
+	} else if def != "" {
 		printPrompt(fmt.Sprintf("%s %s: ", bold(label), dim("["+def+"]")))
 	} else {
 		printPrompt(fmt.Sprintf("%s: ", bold(label)))
@@ -96,6 +114,7 @@ func confirm(label string, def bool) (bool, error) {
 		hint = "Y/n"
 	}
 	for {
+		chatHint = "yes or no"
 		printPrompt(fmt.Sprintf("%s %s ", bold(label), dim("["+hint+"]")))
 		v, err := readLine()
 		if err != nil {
@@ -149,13 +168,17 @@ func choose(label string, options []string) (int, error) {
 				fmt.Fprintf(stderr, dim("  … %d more, type text to filter\n"), len(shown)-pageSize)
 				break
 			}
-			fmt.Fprintf(stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", n+1)), options[i])
+			fmt.Fprintln(stderr, optionLine(n+1, options[i]))
 		}
 		hint := "number"
 		if len(shown) > 8 {
 			hint = "number or text to filter"
 		}
-		printPrompt(fmt.Sprintf("%s ", dim("> "+hint+", empty to cancel:")))
+		if bot != nil {
+			chatHint = "a " + hint
+		} else {
+			printPrompt(fmt.Sprintf("%s ", dim("> "+hint+", empty to cancel:")))
+		}
 		v, err := readLine()
 		if err != nil {
 			return -1, err
@@ -179,6 +202,16 @@ func choose(label string, options []string) (int, error) {
 	}
 }
 
+var spacesRe = regexp.MustCompile(` {2,}`)
+
+// optionLine: "  3) text"; in a chat "*3.* text", the aligned columns of the text as " · "
+func optionLine(n int, text string) string {
+	if bot != nil {
+		return fmt.Sprintf("*%d.* %s", n, spacesRe.ReplaceAllString(strings.TrimSpace(stripANSI(text)), " · "))
+	}
+	return fmt.Sprintf("  %s %s", cyan(fmt.Sprintf("%3d)", n)), text)
+}
+
 // chooseMany: "1,3,5-7", "all", or text to filter first.
 func chooseMany(label string, options []string) ([]int, error) {
 	if len(options) == 0 {
@@ -186,10 +219,14 @@ func chooseMany(label string, options []string) ([]int, error) {
 	}
 	fmt.Fprintln(stderr, bold(label))
 	for i, o := range options {
-		fmt.Fprintf(stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", i+1)), o)
+		fmt.Fprintln(stderr, optionLine(i+1, o))
 	}
 	for {
-		printPrompt(fmt.Sprintf("%s ", dim("> e.g. 1,3,5-7 or all, empty to cancel:")))
+		if bot != nil {
+			chatHint = "numbers like 1,3,5-7, or all"
+		} else {
+			printPrompt(fmt.Sprintf("%s ", dim("> e.g. 1,3,5-7 or all, empty to cancel:")))
+		}
 		v, err := readLine()
 		if err != nil {
 			return nil, err
@@ -356,6 +393,10 @@ func openInBrowser(target string) error {
 
 // details prints key / value lines (empty values skipped)
 func details(w io.Writer, kv ...string) {
+	if bot != nil {
+		chatDetails(w, kv...)
+		return
+	}
 	width := 0
 	for i := 0; i+1 < len(kv); i += 2 {
 		if kv[i+1] != "" && len(kv[i]) > width {

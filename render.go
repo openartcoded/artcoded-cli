@@ -55,6 +55,14 @@ func cell(c string) string {
 
 // table prints rows aligned, the numeric columns on the right. Colored cells keep their alignment.
 func table(w io.Writer, headers []string, rows [][]string) {
+	if bot != nil {
+		chatTable(w, headers, rows)
+		return
+	}
+	termTable(w, headers, rows)
+}
+
+func termTable(w io.Writer, headers []string, rows [][]string) {
 	if len(rows) == 0 {
 		fmt.Fprintln(w, dim("(nothing)"))
 		return

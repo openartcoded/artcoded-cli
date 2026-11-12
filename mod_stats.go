@@ -58,7 +58,12 @@ func terminalColumns() int {
 }
 
 // barWidth: what is left for the bars after the other columns
-func barWidth(used int) int { return max(10, min(60, terminalColumns()-used)) }
+func barWidth(used int) int {
+	if bot != nil {
+		return chatBarWidth
+	}
+	return max(10, min(60, terminalColumns()-used))
+}
 
 func fnum(v float64) string {
 	if v == math.Trunc(v) {

@@ -287,7 +287,12 @@ func (e *Engine) exec(s *session, f func() error) {
 	flush := func(question bool) {
 		text := chatText(out.take())
 		if question {
-			text = strings.TrimRight(text, " ") + "\n_reply *.* for the default / nothing, *cancel* to stop_"
+			hint := chatHint
+			if hint == "" {
+				hint = ". for the default"
+			}
+			chatHint = ""
+			text = strings.TrimRight(text, " :") + "\n" + chatStyle("↳ "+hint+" · cancel stops", "_")
 		}
 		if strings.TrimSpace(text) != "" {
 			for _, part := range splitMessage(text, 3500) {
@@ -366,48 +371,65 @@ func (e *Engine) exec(s *session, f func() error) {
 	}
 }
 
-var tableLike = regexp.MustCompile(`\S {2,}\S|[│┤└─█▏▎▍▌▋▊▉⠀-⣿]`)
-
-// chatText: a monospaced block for tables and charts (WhatsApp keeps their alignment), plain text otherwise
+// chatText: the output of a command as a message (the commands shape it for a chat already)
 func chatText(s string) string {
 	s = strings.TrimRight(stripANSI(s), "\n ")
-	if s == "" {
-		return ""
+	// no more than one empty line in a row
+	for strings.Contains(s, "\n\n\n") {
+		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
 	}
-	if tableLike.MatchString(s) {
-		return "```\n" + s + "\n```"
-	}
-	return s
+	return strings.TrimLeft(s, "\n")
 }
 
-// splitMessage: long outputs in several messages, cut between lines (a monospaced block stays one)
+// splitMessage: long outputs in several messages, cut between lines (preferably empty ones);
+// a ``` block cut in two is closed and opened again
 func splitMessage(s string, limit int) []string {
 	if len(s) <= limit {
 		return []string{s}
 	}
-	mono := strings.HasPrefix(s, "```\n")
-	body := s
-	if mono {
-		body = strings.TrimSuffix(strings.TrimPrefix(s, "```\n"), "\n```")
-	}
 	var parts []string
 	var cur strings.Builder
-	for _, line := range strings.Split(body, "\n") {
-		if cur.Len()+len(line)+1 > limit-8 && cur.Len() > 0 {
-			parts = append(parts, cur.String())
-			cur.Reset()
+	inBlock := false
+	flush := func() {
+		p := strings.TrimRight(cur.String(), "\n")
+		if inBlock {
+			p += "\n```"
 		}
-		cur.WriteString(line + "\n")
+		if strings.TrimSpace(strings.Trim(p, "`\n")) != "" {
+			parts = append(parts, p)
+		}
+		cur.Reset()
+		if inBlock {
+			cur.WriteString("```\n")
+		}
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		fence := strings.HasPrefix(strings.TrimSpace(line), "```")
+		if fence && inBlock {
+			// the end of a block stays with it
+			cur.WriteString(line + "\n")
+			inBlock = false
+			continue
+		}
+		if cur.Len()+len(line)+5 > limit && cur.Len() > 0 {
+			flush()
+		} else if line == "" && !inBlock && cur.Len() > limit*3/4 {
+			// a good place to cut: between two cards
+			flush()
+			continue
+		}
+		cur.WriteString(line)
+		if i < len(lines)-1 {
+			cur.WriteString("\n")
+		}
+		if fence {
+			inBlock = true
+		}
 	}
 	if cur.Len() > 0 {
-		parts = append(parts, cur.String())
-	}
-	for i, p := range parts {
-		p = strings.TrimRight(p, "\n")
-		if mono {
-			p = "```\n" + p + "\n```"
-		}
-		parts[i] = p
+		inBlock = false
+		flush()
 	}
 	return parts
 }
@@ -537,6 +559,9 @@ func (e *Engine) handleFiles(files []IncomingFile, caption string) error {
 	}
 	return nil
 }
+
+// chatHint: how to answer the question being asked (set by the prompts)
+var chatHint string
 
 // forceChatInteractive: the questions go to the conversation
 var forceChatInteractive bool

@@ -60,7 +60,7 @@ func (f *fakeTransport) answerAll(t *testing.T, eng *Engine) []string {
 		select {
 		case m := <-f.msgs:
 			all = append(all, m.text+m.file)
-			if strings.Contains(m.text, "_reply") {
+			if strings.Contains(m.text, "cancel stops") {
 				eng.Handle(self("."))
 			}
 		case <-time.After(500 * time.Millisecond):
@@ -249,4 +249,28 @@ func (l *lockedWriter) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.String()
+}
+
+func TestChatTables(t *testing.T) {
+	bot = &botHooks{width: 42}
+	defer func() { bot = nil }()
+	var b strings.Builder
+	// narrow: stays a table, monospaced
+	table(&b, []string{"month", "total"}, [][]string{{"Jan", "12,00 €"}, {"Feb", "1 200,00 €"}})
+	if s := b.String(); !strings.HasPrefix(s, "```\nMONTH") || !strings.Contains(s, "Feb    1 200,00 €") {
+		t.Fatal(s)
+	}
+	// wide: a card per row
+	b.Reset()
+	table(&b, []string{"number", "client", "description", "total", "id"},
+		[][]string{{"2026-001", "ACME", dim("a long description of the invoice"), "1 210,00 €", dim("i1")}})
+	if s := b.String(); s != "*2026-001*\n_client_: ACME\n_description_: a long description of the invoice\n_total_: 1 210,00 €\nid `i1`\n" {
+		t.Fatalf("%q", s)
+	}
+	// no headers: key: value lines
+	b.Reset()
+	table(&b, []string{"", ""}, [][]string{{"Revenue", "7 000,00 €"}})
+	if s := b.String(); s != "*Revenue*: 7 000,00 €\n" {
+		t.Fatalf("%q", s)
+	}
 }
