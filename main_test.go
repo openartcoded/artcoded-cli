@@ -254,6 +254,8 @@ func newEnvTLS(t *testing.T, tlsServer bool) *env {
 	t.Cleanup(srv.Close)
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	// no test opens a real browser (the ones checking what is opened set their own)
+	t.Setenv("BROWSER", "true")
 	t.Setenv("HOME", dir)
 	forceNonInteractive = true
 	useColor = false

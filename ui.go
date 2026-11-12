@@ -310,20 +310,22 @@ func editJSON(cfg *Config, v any, out any) (bool, error) {
 	}
 }
 
+// openInBrowser opens a url or a file: $BROWSER when set (every system, the usual convention),
+// else the opener of the system.
 func openInBrowser(target string) error {
 	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", target)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
-	default:
-		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" && os.Getenv("BROWSER") == "" {
-			return errors.New("no display")
-		}
-		if b := os.Getenv("BROWSER"); b != "" {
-			cmd = exec.Command(b, target)
-		} else {
+	if b := strings.Fields(os.Getenv("BROWSER")); len(b) > 0 {
+		cmd = exec.Command(b[0], append(b[1:], target)...)
+	} else {
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", target)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+		default:
+			if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+				return errors.New("no display")
+			}
 			cmd = exec.Command("xdg-open", target)
 		}
 	}
