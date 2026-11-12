@@ -45,6 +45,9 @@ func bar(value, maxValue float64, width int) string {
 }
 
 func terminalColumns() int {
+	if bot != nil {
+		return bot.width
+	}
 	if out, err := stty("size"); err == nil {
 		var rows, cols int
 		if _, err := fmt.Sscanf(out, "%d %d", &rows, &cols); err == nil && cols > 0 {

@@ -100,7 +100,7 @@ func maybeAutoUpdate(cmd string) {
 	case "bot", "completion", "version", "update":
 		return
 	}
-	if autoUpdateDisabled() || !isInteractive() || !isTerminal(os.Stdout) {
+	if bot != nil || autoUpdateDisabled() || !isInteractive() || !isTerminal(os.Stdout) {
 		return
 	}
 	if _, ok := parseVersion(version); !ok {
@@ -118,7 +118,7 @@ func maybeAutoUpdate(cmd string) {
 	}
 	ok, err := confirm(fmt.Sprintf("artcoded %s is out (you have %s). Update now?", latest, version), false)
 	if err != nil || !ok {
-		fmt.Fprintln(os.Stderr, dim("  later: artcoded update · never: DISABLE_AUTO_UPDATE=true"))
+		fmt.Fprintln(stderr, dim("  later: artcoded update · never: DISABLE_AUTO_UPDATE=true"))
 		return
 	}
 	if err := installRelease(latest); err != nil {
@@ -139,7 +139,7 @@ func installRelease(tag string) error {
 		exe = resolved
 	}
 	script := fmt.Sprintf("curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | sh -s -- %s", releaseRepo(), tag)
-	fmt.Fprintln(os.Stderr, dim("$ "+script))
+	fmt.Fprintln(stderr, dim("$ "+script))
 	cmd := exec.Command("sh", "-c", script)
 	cmd.Env = append(os.Environ(), "ARTCODED_INSTALL_DIR="+filepath.Dir(exe), "ARTCODED_REPO="+releaseRepo())
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stderr, os.Stderr

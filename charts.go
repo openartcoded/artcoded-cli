@@ -66,7 +66,7 @@ func columnChart(labels []string, values []float64, height int, unit string, col
 		colW = max(colW, runeWidth(l)+1)
 	}
 	// fit the terminal
-	axisW := runeWidth(axisLabel(maxV, unit)) + 1
+	axisW := max(runeWidth(axisLabel(maxV, unit)), runeWidth(axisLabel(maxV/2, unit))) + 1
 	for colW > 2 && axisW+colW*len(values) > terminalColumns()-2 {
 		colW--
 	}

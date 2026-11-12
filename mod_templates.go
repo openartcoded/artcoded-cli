@@ -206,7 +206,7 @@ func showPreview(c *Ctx, d *Download, name string) error {
 		info("preview: %s", p)
 		if !c.has("no-open") {
 			if err := openInBrowser(p); err != nil {
-				fmt.Fprintln(os.Stderr, dim("  (open it with your viewer)"))
+				fmt.Fprintln(stderr, dim("  (open it with your viewer)"))
 			}
 		}
 		return nil
@@ -343,7 +343,7 @@ func tplEdit(c *Ctx) error {
 		case "preview":
 			d, err := renderPreview(c, t, source, ctx)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, red("preview failed: ")+err.Error())
+				fmt.Fprintln(stderr, red("preview failed: ")+err.Error())
 			} else if err := showPreview(c, d, str(t, "name")); err != nil {
 				return err
 			}
@@ -359,7 +359,7 @@ func tplEdit(c *Ctx) error {
 			}
 			var saved M
 			if err := c.api.Multipart("/api/template/save", nil, parts, &saved); err != nil {
-				fmt.Fprintln(os.Stderr, red("save failed: ")+err.Error())
+				fmt.Fprintln(stderr, red("save failed: ")+err.Error())
 				if !c.interactive || c.yes {
 					return err
 				}

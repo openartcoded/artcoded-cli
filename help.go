@@ -54,8 +54,8 @@ func knownFlags(m *Module, a *Action) map[string]bool {
 	known := map[string]bool{}
 	for _, f := range append(append([]string{}, globalFlags...), docOf(m, a).Flags...) {
 		fd := parseFlagDoc(f)
+		known[fd.name] = true // a positional can be given as --name too
 		if !fd.positional {
-			known[fd.name] = true
 			known["no-"+fd.name] = true
 		}
 	}
@@ -191,8 +191,8 @@ func moduleHelp(m *Module) string {
 
 // page: through $PAGER (less) when the text is longer than the terminal
 func page(text string) {
-	if !isTerminal(os.Stdout) || strings.Count(text, "\n") < terminalLines()-2 {
-		fmt.Print(text)
+	if bot != nil || !isTerminal(os.Stdout) || strings.Count(text, "\n") < terminalLines()-2 {
+		fmt.Fprint(stdout, text)
 		return
 	}
 	pager := os.Getenv("PAGER")
@@ -204,7 +204,7 @@ func page(text string) {
 	cmd.Stdin = strings.NewReader(text)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Print(text)
+		fmt.Fprint(stdout, text)
 	}
 }
 

@@ -148,7 +148,7 @@ func openOnline(c *Ctx, m *Module, a *Action) error {
 	}
 	target := base + p
 	if err := openInBrowser(target); err != nil {
-		fmt.Println(target)
+		fmt.Fprintln(stdout, target)
 		return nil
 	}
 	info("opened %s", target)

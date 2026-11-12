@@ -249,9 +249,9 @@ func (a *Auth) BrowserLogin() (*Tokens, error) {
 		_ = srv.Shutdown(ctx)
 	}()
 
-	fmt.Fprintln(os.Stderr, "Opening the browser to log in. If it doesn't open, visit:")
-	fmt.Fprintln(os.Stderr, "  "+authURL)
-	fmt.Fprintln(os.Stderr, dim(fmt.Sprintf("If keycloak answers 'Invalid parameter: redirect_uri': add http://127.0.0.1:%d/* to the\n"+
+	fmt.Fprintln(stderr, "Opening the browser to log in. If it doesn't open, visit:")
+	fmt.Fprintln(stderr, "  "+authURL)
+	fmt.Fprintln(stderr, dim(fmt.Sprintf("If keycloak answers 'Invalid parameter: redirect_uri': add http://127.0.0.1:%d/* to the\n"+
 		"'Valid redirect URIs' of the client %s, then try again (ctrl+c to stop waiting).", port, a.cfg.ClientID)))
 	_ = openInBrowser(authURL)
 
@@ -302,7 +302,7 @@ func (a *Auth) DeviceLogin() (*Tokens, error) {
 	if link == "" {
 		link = dr.VerificationURI
 	}
-	fmt.Fprintf(os.Stderr, "Open %s and confirm the code %s\n", link, bold(dr.UserCode))
+	fmt.Fprintf(stderr, "Open %s and confirm the code %s\n", link, bold(dr.UserCode))
 	_ = openInBrowser(link)
 	interval := max(time.Duration(dr.Interval)*time.Second, minDeviceInterval)
 	deadline := time.Now().Add(time.Duration(max(dr.ExpiresIn, 60)) * time.Second)

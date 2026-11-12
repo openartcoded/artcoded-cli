@@ -21,7 +21,7 @@ var boolFlags = map[string]bool{
 	"public": true, "payment-proof": true, "bcc": true, "visible": true, "hidden": true, "refresh": true,
 	"physical": true, "all": true, "done": true, "raw": true, "force": true, "snapshot": true, "edit": true,
 	"stdout": true, "quiet": true, "no-color": true, "unseen": true, "processed": true, "student": true,
-	"group": true, "mock": true, "insecure": true, "proof": true, "all-days": true,
+	"group": true, "console": true, "mock": true, "insecure": true, "proof": true, "all-days": true,
 	"from-previous": true, "principal": true, "zip": true, "xml": true, "edit-context": true, "mail": true, "sms": true,
 	"in-app": true, "persist": true, "demo": true, "online": true, "version": true, "save": true, "no-preview": true, "enable": true, "disable": true,
 }
@@ -240,7 +240,7 @@ func (c *Ctx) num(name, label string, def *float64, required bool) (*float64, er
 		if c.has(name) || !c.interactive {
 			return nil, fmt.Errorf("--%s: not a number: %s", name, v)
 		}
-		fmt.Fprintln(os.Stderr, red("  not a number"))
+		fmt.Fprintln(stderr, red("  not a number"))
 	}
 }
 
@@ -297,7 +297,7 @@ func (c *Ctx) date(name, label, def string, required bool) (*time.Time, error) {
 		if c.has(name) || !c.interactive {
 			return nil, fmt.Errorf("--%s: %v", name, perr)
 		}
-		fmt.Fprintln(os.Stderr, red("  "+perr.Error()))
+		fmt.Fprintln(stderr, red("  "+perr.Error()))
 	}
 }
 
@@ -352,7 +352,13 @@ func iso(t time.Time) string { return t.Format("2006-01-02T15:04:05.000Z07:00") 
 func httpDate(t time.Time) string { return t.UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT") }
 
 // existing file path from --name, positional or asked
+// errNoFileInChat: in a conversation the files come with the message
+var errNoFileInChat = errors.New("send the file in the chat, with the command as its caption (e.g. expenses add) — or without text, the bot asks what it is for")
+
 func (c *Ctx) file(name, label string) (string, error) {
+	if _, ok := c.flag(name); bot != nil && !ok && len(c.args.pos) == 0 {
+		return "", errNoFileInChat
+	}
 	for {
 		v, err := c.reqPos(name, label, "")
 		if err != nil {
@@ -370,7 +376,7 @@ func (c *Ctx) file(name, label string) (string, error) {
 		if c.has(name) || !c.interactive {
 			return "", errors.New(msg)
 		}
-		fmt.Fprintln(os.Stderr, red("  "+msg))
+		fmt.Fprintln(stderr, red("  "+msg))
 	}
 }
 
@@ -397,7 +403,10 @@ func (c *Ctx) files(name, label string, required bool) ([]string, error) {
 		}
 		return out, nil
 	}
-	fmt.Fprintln(os.Stderr, dim("  one path per line (drag & drop works), empty line to finish"))
+	if bot != nil {
+		return nil, errNoFileInChat
+	}
+	fmt.Fprintln(stderr, dim("  one path per line (drag & drop works), empty line to finish"))
 	for {
 		v, err := ask(fmt.Sprintf("%s #%d", label, len(out)+1), "")
 		if err != nil {
@@ -405,14 +414,14 @@ func (c *Ctx) files(name, label string, required bool) ([]string, error) {
 		}
 		if v == "" {
 			if required && len(out) == 0 {
-				fmt.Fprintln(os.Stderr, red("  at least one file"))
+				fmt.Fprintln(stderr, red("  at least one file"))
 				continue
 			}
 			return out, nil
 		}
 		p := expandPath(v)
 		if st, err := os.Stat(p); err != nil || st.IsDir() {
-			fmt.Fprintln(os.Stderr, red("  no such file: "+p))
+			fmt.Fprintln(stderr, red("  no such file: "+p))
 			continue
 		}
 		out = append(out, p)
@@ -495,6 +504,13 @@ func (c *Ctx) result(v any, human func()) error {
 
 // save a download: --out (file or directory), download_dir, or the current directory. --stdout writes it out.
 func (c *Ctx) save(d *Download) error {
+	if bot != nil && !c.boolFlag("stdout") {
+		name := d.Name
+		if name == "" {
+			name = "download"
+		}
+		return bot.sendFile(name, d.ContentType, d.Data)
+	}
 	if c.boolFlag("stdout") {
 		_, err := c.out.Write(d.Data)
 		return err

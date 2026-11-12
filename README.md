@@ -211,6 +211,28 @@ artcoded templates preview <id> --file draft.html --context ctx.json --open
 artcoded invoices list --json | jq '.content[].total'
 ```
 
+## WhatsApp bot
+
+The commands of the cli, from your "message yourself" chat on WhatsApp: `help`, `dashboard`, `invoices list`...
+Missing arguments are asked in the chat (`.` for the default, `cancel` to stop). Send a file without text and the
+bot asks what it is for (expense, document, payment proof...); or say it in the caption: `expense train ticket`,
+`document Statuts 2026`, or any command taking files (`reports attach 12`). Downloads come back as files.
+
+Try it in a terminal first, with a fake WhatsApp:
+
+```sh
+artcoded bot --console
+help
+/file ~/Downloads/ticket.pdf          # a file without text: the bot asks what it is for
+/file ~/Downloads/ticket.pdf expense train ticket
+/from 32471112233 help                # someone else (only the numbers of WHATSAPP_ALLOWED get an answer)
+```
+
+| variable | |
+|---|---|
+| `ENABLE_WHATSAPP_BOT=true` | without it `artcoded bot` does not start |
+| `WHATSAPP_ALLOWED` | other numbers allowed to use the bot, in their own chat with it: `32471112233,32472...` |
+
 ## Configuration
 
 `~/.config/artcoded-cli.yml` (`--config` or `ARTCODED_CONFIG` for another file). Every key can be

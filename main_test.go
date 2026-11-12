@@ -266,11 +266,11 @@ func newEnvTLS(t *testing.T, tlsServer bool) *env {
 func (e *env) cli(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	r, w, _ := os.Pipe()
-	old := os.Stdout
-	os.Stdout = w
+	old, oldW := os.Stdout, stdout
+	os.Stdout, stdout = w, w
 	err := run(append([]string{"--config", e.config}, args...))
 	w.Close()
-	os.Stdout = old
+	os.Stdout, stdout = old, oldW
 	out, _ := io.ReadAll(r)
 	return string(out), err
 }

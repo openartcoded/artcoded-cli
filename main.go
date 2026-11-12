@@ -87,6 +87,7 @@ Setup:
   update                 install the latest release (checked once a day; DISABLE_AUTO_UPDATE=true: never)
   config [show|path|edit|set <key> <value>|reset]
   completion bash|zsh    shell completion: source <(artcoded completion bash)
+  bot [--console]        the WhatsApp bot (ENABLE_WHATSAPP_BOT=true), artcoded bot --help
 
 Global flags:
   --config <path>        configuration file (default ~/.config/artcoded-cli.yml, env ARTCODED_CONFIG)
@@ -118,10 +119,33 @@ func orderedModules() []*Module {
 	return out
 }
 
+const chatUsageHeader = `*artcoded*: write the commands of the cli, e.g.
+• dashboard
+• invoices list
+• expenses list --processed
+• _<module> help_: the actions of a module
+• _<module> <action> --help_: the manual of an action
+
+Missing arguments are asked: answer in the chat, *.* for the default, *cancel* to stop.
+Send a file: the bot asks what it is for (or say it in the caption: expense, document...).
+`
+
 func printUsage(cfgPath string) {
-	fmt.Print(usageHeader)
+	if bot != nil {
+		fmt.Fprint(stdout, chatUsageHeader)
+		fmt.Fprintln(stdout, "\n*Modules*")
+		visible := visibleModules(cfgPath)
+		for _, m := range orderedModules() {
+			if visible == nil || visible[m] {
+				fmt.Fprintf(stdout, "• *%s*: %s\n", m.Name, m.Help)
+			}
+		}
+		return
+	} else {
+		fmt.Fprint(stdout, usageHeader)
+	}
 	visible := visibleModules(cfgPath)
-	fmt.Println("\nModules (artcoded <module> --help):")
+	fmt.Fprintln(stdout, "\nModules (artcoded <module> --help):")
 	for _, m := range orderedModules() {
 		// the ones the menu of the backoffice hides are hidden here too
 		if visible != nil && !visible[m] {
@@ -131,7 +155,7 @@ func printUsage(cfgPath string) {
 		if len(m.Aliases) > 0 {
 			name += " (" + strings.Join(m.Aliases, ", ") + ")"
 		}
-		fmt.Printf("  %-34s %s\n", name, m.Help)
+		fmt.Fprintf(stdout, "  %-34s %s\n", name, m.Help)
 	}
 }
 
@@ -141,16 +165,16 @@ func main() {
 		return
 	}
 	if errors.Is(err, errCancel) {
-		fmt.Fprintln(os.Stderr, dim("cancelled"))
+		fmt.Fprintln(stderr, dim("cancelled"))
 		os.Exit(130)
 	}
-	fmt.Fprintln(os.Stderr, red("error: ")+err.Error())
+	fmt.Fprintln(stderr, red("error: ")+err.Error())
 	var ae *APIError
 	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized {
-		fmt.Fprintln(os.Stderr, "  run: artcoded login")
+		fmt.Fprintln(stderr, "  run: artcoded login")
 	}
 	if isCertError(err) {
-		fmt.Fprintln(os.Stderr, "  hint: "+certHint)
+		fmt.Fprintln(stderr, "  hint: "+certHint)
 	}
 	os.Exit(1)
 }
@@ -173,7 +197,7 @@ func run(argv []string) error {
 		cmd = strings.ToLower(args.pos[0])
 		args.pos = args.pos[1:]
 	}
-	c := &Ctx{args: args, out: os.Stdout}
+	c := &Ctx{args: args, out: stdout}
 	c.jsonOut = c.boolFlag("json")
 	c.yes = c.boolFlag("yes")
 	c.interactive = isInteractive()
@@ -184,7 +208,7 @@ func run(argv []string) error {
 	}
 	switch cmd {
 	case "version":
-		fmt.Println("artcoded " + versionString())
+		fmt.Fprintln(stdout, "artcoded "+versionString())
 		return nil
 	case "help", "man":
 		if t, ok := c.pos(); ok {
@@ -214,13 +238,15 @@ func run(argv []string) error {
 		return runReset(c, cfgPath)
 	case "update", "upgrade":
 		return runUpdate(c)
+	case "bot":
+		return runBot(c, cfgPath)
 	}
 	maybeAutoUpdate(cmd)
 	if cmd == "" {
 		// the menu only when asked: artcoded menu
 		printUsage(cfgPath)
 		if _, err := os.Stat(cfgPath); err != nil {
-			fmt.Println("\nFirst time? Run: artcoded init")
+			fmt.Fprintln(stdout, "\nFirst time? Run: artcoded init")
 		}
 		return nil
 	}
@@ -241,7 +267,7 @@ func run(argv []string) error {
 		}
 		act = m.find(actName)
 		if act == nil {
-			fmt.Print(moduleHelp(m))
+			fmt.Fprint(stdout, moduleHelp(m))
 			return fmt.Errorf("unknown action %q for %s", actName, m.Name)
 		}
 		c.args.pos = c.args.pos[1:]
@@ -259,12 +285,12 @@ func run(argv []string) error {
 		if !c.interactive {
 			return fmt.Errorf("no configuration at %s: run 'artcoded init' first", cfgPath)
 		}
-		fmt.Fprintf(os.Stderr, "No configuration yet (%s), let's create it.\n\n", cfgPath)
+		fmt.Fprintf(stderr, "No configuration yet (%s), let's create it.\n\n", cfgPath)
 		if err := runInit(c, cfgPath); err != nil {
 			return err
 		}
 		if cmd == "" {
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(stderr)
 		}
 		if cfg, err = loadConfig(cfgPath); err != nil {
 			return err
@@ -439,7 +465,7 @@ func runInit(c *Ctx, path string) error {
 			}
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, bold("artcoded setup")+dim("  (enter keeps the value in brackets)"))
+		fmt.Fprintln(stderr, bold("artcoded setup")+dim("  (enter keeps the value in brackets)"))
 		v, err := c.opt("frontend-url", "Backoffice url (to read its keycloak settings, optional)", cfg.FrontendURL)
 		if err != nil {
 			return err
@@ -545,7 +571,7 @@ func runInit(c *Ctx, path string) error {
 	for {
 		api = newAPI(cfg, c.boolFlag("verbose"))
 		api.auth.clearCached()
-		fmt.Fprintln(os.Stderr, dim("logging in..."))
+		fmt.Fprintln(stderr, dim("logging in..."))
 		t, err := api.auth.Login()
 		if err == nil {
 			api.token = t
@@ -708,7 +734,7 @@ func runMenu(c *Ctx) error {
 			opts = append(opts, fmt.Sprintf("%-18s %s", e.title, dim(e.module.Help)))
 		}
 		opts = append(opts, fmt.Sprintf("%-18s %s", "Account", dim("whoami, login, logout, configuration")), "Quit")
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 		i, err := choose("artcoded", opts)
 		if errors.Is(err, errCancel) || i == len(opts)-1 {
 			return nil
@@ -718,7 +744,7 @@ func runMenu(c *Ctx) error {
 		}
 		if i == len(entries) {
 			if err := accountMenu(c); err != nil && !errors.Is(err, errCancel) {
-				fmt.Fprintln(os.Stderr, red("error: ")+err.Error())
+				fmt.Fprintln(stderr, red("error: ")+err.Error())
 			}
 			continue
 		}
@@ -765,7 +791,7 @@ func moduleMenu(c *Ctx, m *Module, loop bool) error {
 		for i, a := range m.Actions {
 			opts[i] = fmt.Sprintf("%-22s %s", a.Name, dim(a.Help))
 		}
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 		i, err := choose(m.Title, opts)
 		if err != nil {
 			if errors.Is(err, errCancel) {
@@ -777,9 +803,9 @@ func moduleMenu(c *Ctx, m *Module, loop bool) error {
 		ac := &Ctx{api: c.api, cfg: c.cfg, args: Args{flags: map[string][]string{}}, out: c.out, interactive: true, jsonOut: c.jsonOut}
 		if err := m.Actions[i].Run(ac); err != nil {
 			if errors.Is(err, errCancel) {
-				fmt.Fprintln(os.Stderr, dim("cancelled"))
+				fmt.Fprintln(stderr, dim("cancelled"))
 			} else {
-				fmt.Fprintln(os.Stderr, red("error: ")+err.Error())
+				fmt.Fprintln(stderr, red("error: ")+err.Error())
 			}
 		}
 		if !loop {
@@ -800,10 +826,10 @@ func printCompletion(shell string) error {
 		}
 		cases += fmt.Sprintf("    %s) words=%q ;;\n", strings.Join(names, "|"), strings.Join(acts, " "))
 	}
-	top := strings.Join(append(mods, "init", "update", "reset", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
+	top := strings.Join(append(mods, "init", "update", "reset", "login", "logout", "whoami", "config", "menu", "help", "version", "completion", "bot"), " ")
 	switch shell {
 	case "bash", "":
-		fmt.Printf(`_artcoded() {
+		fmt.Fprintf(stdout, `_artcoded() {
   local cur=${COMP_WORDS[COMP_CWORD]} words=""
   if [ $COMP_CWORD -eq 1 ]; then
     words=%q
@@ -818,7 +844,7 @@ func printCompletion(shell string) error {
 complete -F _artcoded artcoded
 `, top, cases)
 	case "zsh":
-		fmt.Println("autoload -U +X bashcompinit && bashcompinit")
+		fmt.Fprintln(stdout, "autoload -U +X bashcompinit && bashcompinit")
 		return printCompletion("bash")
 	default:
 		return fmt.Errorf("unknown shell %q (bash or zsh)", shell)
@@ -856,10 +882,10 @@ func runReset(c *Ctx, path string) error {
 	}
 	info("configuration and session removed")
 	if c.interactive && !c.yes && askBool("Run the setup now?", true) {
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 		return runInit(c, path)
 	}
-	fmt.Println("run: artcoded init")
+	fmt.Fprintln(stdout, "run: artcoded init")
 	return nil
 }
 

@@ -57,7 +57,7 @@ const certHint = "the certificate is not trusted (self-signed?): artcoded config
 
 // askCertTrust: during the setup, how to trust a certificate the system refuses. false: cancelled.
 func askCertTrust(cfg *Config, cause error) (bool, error) {
-	fmt.Fprintln(os.Stderr, yellow("! ")+"the certificate is not trusted: "+cause.Error())
+	fmt.Fprintln(stderr, yellow("! ")+"the certificate is not trusted: "+cause.Error())
 	if !isInteractive() {
 		return false, nil
 	}
@@ -82,7 +82,7 @@ func askCertTrust(cfg *Config, cause error) (bool, error) {
 		}
 		cfg.CAFile, cfg.Insecure = p, false
 		if _, err := cfg.tlsConfig(); err != nil {
-			fmt.Fprintln(os.Stderr, red("  "+err.Error()))
+			fmt.Fprintln(stderr, red("  "+err.Error()))
 			continue
 		}
 		return true, nil

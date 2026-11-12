@@ -15,7 +15,7 @@ var currentPrompt string
 
 func printPrompt(p string) {
 	currentPrompt = p
-	fmt.Fprint(os.Stderr, p)
+	fmt.Fprint(stderr, p)
 }
 
 var history []string
@@ -31,6 +31,9 @@ func stty(args ...string) (string, error) {
 func readLine() (string, error) { return readLineMode(false) }
 
 func readLineMode(secret bool) (string, error) {
+	if lineSource != nil {
+		return lineSource(secret)
+	}
 	if !isWindows() && isTerminal(os.Stdin) {
 		if saved, err := stty("-g"); err == nil {
 			if _, err := stty("-icanon", "-echo", "-isig", "min", "1", "time", "0"); err == nil {
@@ -48,7 +51,7 @@ func readLineMode(secret bool) (string, error) {
 		return "", err
 	}
 	if secret && isTerminal(os.Stdin) {
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 	}
 	return cleanInput(strings.TrimRight(line, "\r\n")), nil
 }
@@ -99,9 +102,9 @@ func editLine(secret bool) (string, error) {
 		if secret {
 			shown = strings.Repeat("•", len(buf))
 		}
-		fmt.Fprintf(os.Stderr, "\r%s%s\x1b[K", currentPrompt, shown)
+		fmt.Fprintf(stderr, "\r%s%s\x1b[K", currentPrompt, shown)
 		if back := len(buf) - pos; back > 0 {
-			fmt.Fprintf(os.Stderr, "\x1b[%dD", back)
+			fmt.Fprintf(stderr, "\x1b[%dD", back)
 		}
 	}
 	setLine := func(s string) {
@@ -112,23 +115,23 @@ func editLine(secret bool) (string, error) {
 	for {
 		r, _, err := stdin.ReadRune()
 		if err != nil {
-			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(stderr)
 			return "", errCancel
 		}
 		switch r {
 		case '\r', '\n':
-			fmt.Fprint(os.Stderr, "\r\n")
+			fmt.Fprint(stderr, "\r\n")
 			line := string(buf)
 			if !secret && strings.TrimSpace(line) != "" && (len(history) == 0 || history[len(history)-1] != line) {
 				history = append(history, line)
 			}
 			return line, nil
 		case 3: // ctrl+c
-			fmt.Fprint(os.Stderr, "^C\r\n")
+			fmt.Fprint(stderr, "^C\r\n")
 			return "", errCancel
 		case 4: // ctrl+d: delete, or cancel on an empty line
 			if len(buf) == 0 {
-				fmt.Fprint(os.Stderr, "\r\n")
+				fmt.Fprint(stderr, "\r\n")
 				return "", errCancel
 			}
 			if pos < len(buf) {

@@ -135,7 +135,7 @@ func (a *API) send(r request) (*http.Response, error) {
 			req.Header.Set("Accept", r.accept)
 		}
 		if a.verbose {
-			fmt.Fprintf(os.Stderr, "%s %s\n", r.method, u)
+			fmt.Fprintf(stderr, "%s %s\n", r.method, u)
 		}
 		res, err := a.http.Do(req)
 		if err != nil {
@@ -306,11 +306,7 @@ func (a *API) MultipartFetch(path string, parts []Part, fallbackName string) (*D
 func writeFilePart(w *multipart.Writer, field, filename string, data []byte) error {
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(field), escapeQuotes(filename)))
-	ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
-	if ct == "" {
-		ct = http.DetectContentType(data)
-	}
-	h.Set("Content-Type", ct)
+	h.Set("Content-Type", contentTypeFor(filename, data))
 	pw, err := w.CreatePart(h)
 	if err != nil {
 		return err
@@ -411,4 +407,12 @@ func (a *API) Upload(path string, correlationID string, public bool) (map[string
 	var out map[string]any
 	err := a.Multipart("/api/resource/upload", nil, parts, &out)
 	return out, err
+}
+
+// contentTypeFor: from the extension, else from the content
+func contentTypeFor(filename string, data []byte) string {
+	if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }

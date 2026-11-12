@@ -18,6 +18,12 @@ import (
 
 var errCancel = errors.New("cancelled")
 
+// where the commands write: the terminal, or the conversation of the bot
+var (
+	stdout io.Writer = os.Stdout
+	stderr io.Writer = os.Stderr
+)
+
 var stdin = bufio.NewReader(os.Stdin)
 
 func isWindows() bool { return runtime.GOOS == "windows" }
@@ -29,7 +35,9 @@ func isTerminal(f *os.File) bool {
 
 var forceNonInteractive bool
 
-func isInteractive() bool { return !forceNonInteractive && isTerminal(os.Stdin) }
+func isInteractive() bool {
+	return forceChatInteractive || !forceNonInteractive && isTerminal(os.Stdin)
+}
 
 var useColor = os.Getenv("NO_COLOR") == "" && isTerminal(os.Stdout) && os.Getenv("TERM") != "dumb"
 
@@ -46,8 +54,8 @@ func red(s string) string    { return ansi("31", s) }
 func yellow(s string) string { return ansi("33", s) }
 func cyan(s string) string   { return ansi("36", s) }
 
-func info(format string, a ...any) { fmt.Fprintln(os.Stderr, green("✓ ")+fmt.Sprintf(format, a...)) }
-func warn(format string, a ...any) { fmt.Fprintln(os.Stderr, yellow("! ")+fmt.Sprintf(format, a...)) }
+func info(format string, a ...any) { fmt.Fprintln(stderr, green("✓ ")+fmt.Sprintf(format, a...)) }
+func warn(format string, a ...any) { fmt.Fprintln(stderr, yellow("! ")+fmt.Sprintf(format, a...)) }
 
 // ask a value, def shown in brackets and returned on enter.
 func ask(label, def string) (string, error) {
@@ -73,7 +81,7 @@ func askRequired(label, def string) (string, error) {
 		if err != nil || v != "" {
 			return v, err
 		}
-		fmt.Fprintln(os.Stderr, red("  required"))
+		fmt.Fprintln(stderr, red("  required"))
 	}
 }
 
@@ -125,23 +133,23 @@ func choose(label string, options []string) (int, error) {
 				}
 			}
 			if len(shown) == 0 {
-				fmt.Fprintln(os.Stderr, red("  no match for "+strconv.Quote(filter)))
+				fmt.Fprintln(stderr, red("  no match for "+strconv.Quote(filter)))
 				filter = ""
 				continue
 			}
 			if len(shown) == 1 {
-				fmt.Fprintf(os.Stderr, "  → %s\n", options[shown[0]])
+				fmt.Fprintf(stderr, "  → %s\n", options[shown[0]])
 				return shown[0], nil
 			}
 		}
-		fmt.Fprintln(os.Stderr, bold(label))
+		fmt.Fprintln(stderr, bold(label))
 		const pageSize = 40
 		for n, i := range shown {
 			if n >= pageSize {
-				fmt.Fprintf(os.Stderr, dim("  … %d more, type text to filter\n"), len(shown)-pageSize)
+				fmt.Fprintf(stderr, dim("  … %d more, type text to filter\n"), len(shown)-pageSize)
 				break
 			}
-			fmt.Fprintf(os.Stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", n+1)), options[i])
+			fmt.Fprintf(stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", n+1)), options[i])
 		}
 		hint := "number"
 		if len(shown) > 8 {
@@ -164,7 +172,7 @@ func choose(label string, options []string) (int, error) {
 			if n >= 1 && n <= len(shown) {
 				return shown[n-1], nil
 			}
-			fmt.Fprintln(os.Stderr, red("  out of range"))
+			fmt.Fprintln(stderr, red("  out of range"))
 			continue
 		}
 		filter = v
@@ -176,9 +184,9 @@ func chooseMany(label string, options []string) ([]int, error) {
 	if len(options) == 0 {
 		return nil, errors.New("nothing to choose from")
 	}
-	fmt.Fprintln(os.Stderr, bold(label))
+	fmt.Fprintln(stderr, bold(label))
 	for i, o := range options {
-		fmt.Fprintf(os.Stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", i+1)), o)
+		fmt.Fprintf(stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", i+1)), o)
 	}
 	for {
 		printPrompt(fmt.Sprintf("%s ", dim("> e.g. 1,3,5-7 or all, empty to cancel:")))
@@ -199,7 +207,7 @@ func chooseMany(label string, options []string) ([]int, error) {
 		}
 		sel, err := parseRanges(v, len(options))
 		if err != nil {
-			fmt.Fprintln(os.Stderr, red("  "+err.Error()))
+			fmt.Fprintln(stderr, red("  "+err.Error()))
 			continue
 		}
 		return sel, nil
@@ -260,6 +268,9 @@ func cfgEditor(cfg *Config) string {
 
 // editText opens the editor on initial text, returns the edited text.
 func editText(cfg *Config, initial, ext string) (string, error) {
+	if bot != nil {
+		return "", errors.New("no editor on WhatsApp: pass the value as a flag (or a file)")
+	}
 	if !isInteractive() {
 		return "", errors.New("an editor is needed: run in a terminal or pass the value as a flag / file")
 	}
@@ -298,7 +309,7 @@ func editJSON(cfg *Config, v any, out any) (bool, error) {
 			return false, nil
 		}
 		if err := json.Unmarshal([]byte(edited), out); err != nil {
-			fmt.Fprintln(os.Stderr, red("invalid json: "+err.Error()))
+			fmt.Fprintln(stderr, red("invalid json: "+err.Error()))
 			again, cerr := confirm("Edit again?", true)
 			if cerr != nil || !again {
 				return false, errCancel
@@ -313,6 +324,16 @@ func editJSON(cfg *Config, v any, out any) (bool, error) {
 // openInBrowser opens a url or a file: $BROWSER when set (every system, the usual convention),
 // else the opener of the system.
 func openInBrowser(target string) error {
+	if bot != nil {
+		if strings.Contains(target, "://") {
+			return bot.sendLink(target)
+		}
+		data, err := os.ReadFile(target)
+		if err != nil {
+			return err
+		}
+		return bot.sendFile(filepath.Base(target), contentTypeFor(target, data), data)
+	}
 	var cmd *exec.Cmd
 	if b := strings.Fields(os.Getenv("BROWSER")); len(b) > 0 {
 		cmd = exec.Command(b[0], append(b[1:], target)...)

@@ -37,12 +37,18 @@ func isNumeric(s string) bool {
 	return s != "" && numericRe.MatchString(s)
 }
 
-const maxCell = 60
+// maxCell: the widest a cell gets (narrow on a phone)
+func maxCell() int {
+	if bot != nil {
+		return 24
+	}
+	return 60
+}
 
 func cell(c string) string {
 	c = strings.ReplaceAll(strings.ReplaceAll(c, "\n", " "), "\t", " ")
-	if runeWidth(c) > maxCell {
-		return truncate(stripANSI(c), maxCell)
+	if runeWidth(c) > maxCell() {
+		return truncate(stripANSI(c), maxCell())
 	}
 	return c
 }

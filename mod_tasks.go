@@ -209,7 +209,7 @@ func taskAdd(c *Ctx) error {
 			if !c.interactive || c.has("cron") {
 				return fmt.Errorf("invalid cron expression %q", cron)
 			}
-			fmt.Println(red("  invalid cron expression"))
+			fmt.Fprintln(stdout, red("  invalid cron expression"))
 			if cron, err = askRequired("Cron expression", cron); err != nil {
 				return err
 			}
