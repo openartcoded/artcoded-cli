@@ -57,7 +57,7 @@ func loadTimesheets(c *Ctx) ([]M, error) {
 }
 
 func tsDesc(t M) string {
-	s := fmt.Sprintf("%s  %s  %sh", str(t, "name"), str(t, "clientName"), str(t, "numberOfHoursWorked"))
+	s := fmt.Sprintf("%s  %s  %sh", str(t, "name"), sens(str(t, "clientName")), str(t, "numberOfHoursWorked"))
 	if boolean(t, "closed") {
 		s += dim(" (closed)")
 	}
@@ -87,7 +87,7 @@ func tsList(c *Ctx) error {
 			if boolean(t, "closed") {
 				state = dim("closed")
 			}
-			rows = append(rows, []string{str(t, "name"), str(t, "clientName"), str(t, "numberOfHoursWorked"), str(t, "numberOfWorkingDays"), state, mark(str(t, "invoiceId") != "", "✓"), dim(str(t, "id"))})
+			rows = append(rows, []string{str(t, "name"), sens(str(t, "clientName")), str(t, "numberOfHoursWorked"), str(t, "numberOfWorkingDays"), state, mark(str(t, "invoiceId") != "", "✓"), dim(str(t, "id"))})
 		}
 		table(c.out, []string{"timesheet", "client", "hours", "working days", "", "invoiced", "id"}, rows)
 	})
@@ -130,7 +130,7 @@ func tsShow(c *Ctx) error {
 		return err
 	}
 	return c.result(t, func() {
-		details(c.out, "timesheet", bold(str(t, "name")), "client", str(t, "clientName"), "closed", yesNo(boolean(t, "closed")),
+		details(c.out, "timesheet", bold(str(t, "name")), "client", sens(str(t, "clientName")), "closed", yesNo(boolean(t, "closed")),
 			"hours", str(t, "numberOfHoursWorked"), "working days", str(t, "numberOfWorkingDays"),
 			"min / max hours", fmt.Sprintf("%s / %s", str(t, "settings.minHoursPerDay"), str(t, "settings.maxHoursPerDay")), "id", str(t, "id"))
 		rows := [][]string{}
@@ -416,7 +416,7 @@ func tsStats(c *Ctx) error {
 			if year != "" && str(r, "year") != year {
 				continue
 			}
-			rows = append(rows, []string{str(r, "year"), fmt.Sprintf("%02d", int(num(r, "month"))), str(r, "client"),
+			rows = append(rows, []string{str(r, "year"), fmt.Sprintf("%02d", int(num(r, "month"))), sens(str(r, "client")),
 				strconv.FormatFloat(num(r, "minutes")/60, 'f', 1, 64), str(r, "days")})
 		}
 		table(c.out, []string{"year", "month", "client", "hours", "days"}, rows)

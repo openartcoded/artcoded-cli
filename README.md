@@ -4,6 +4,7 @@ The artcoded backoffice in your terminal: invoices, expenses, timesheets, dossie
 A single binary (Go, no dependency), for Linux, macOS and Windows.
 
 ```sh
+artcoded dashboard              # the most useful figures: tables and charts
 artcoded expenses list --help   # the manual of an action: options and examples
 artcoded expenses add ~/Downloads/receipt.pdf
 artcoded invoices download  # no id: choose the invoice in a list
@@ -117,6 +118,16 @@ artcoded menu [<module>]            interactive menu, only when asked
 
 A flag an action does not know (a typo like `--archive`) is reported.
 
+- `--online` on a list / show action opens that page of the backoffice in the browser instead
+  (`artcoded invoices list --archived --online`; needs `frontend_url` in the config).
+- `--demo` masks the amounts and the names of clients and people (screen sharing); `demo: "true"` in the
+  config makes it the default. The demo mode of the backoffice masks the dashboard too.
+- `artcoded --version` (or `-V`) prints the version.
+
+The module list (`artcoded`, `artcoded help`) shows only what the menu of the backoffice shows you: a
+module hidden in the settings (e.g. the gallery) is not listed. It is the menu last read from the backend
+(`artcoded menu`, the dashboard and every command reading the menu refresh it).
+
 Lists show one set at a time, like the backoffice: `expenses list` shows the expenses **to process**
 (in no dossier yet), `--processed` the ones already in a dossier; `invoices list --archived`,
 `dossiers list --closed` likewise.
@@ -136,7 +147,7 @@ Templates is added for an admin while the backend menu has no link for it (like 
 | module | what |
 |---|---|
 | `home` | dashboard, todos, post-its, memo dates, notifications |
-| `stats` | the charts of the home page: per year (revenue, per day, relative), per month, per client, hours (per year, progress, per client), dossiers, expenses per tag |
+| `stats` | the charts of the home page in tables, column charts and line charts: per year (revenue, per day, relative), per month, cumulated revenue, per client, hours (per year, progress, per client), dossiers, expenses per tag |
 | `tasks` | reminders and scheduled actions (with their parameters), results, cron check |
 | `timesheets` | `log` hours of a day, rates, settings, close / reopen, generate the invoice, pdf, stats |
 | `expenses` | `add` from files (+ tag and price), tag, price, attach / detach, download, labels, exceptional expenses |

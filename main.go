@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +71,7 @@ func (m *Module) find(name string) *Action {
 const usageHeader = `artcoded: the artcoded backoffice in your terminal
 
 Usage:
+  artcoded dashboard                      the most useful figures at a glance
   artcoded <module> <action> [arguments] [--flags]
   artcoded <module> --help            the actions of a module
   artcoded <module> <action> --help   manual of an action: options and examples
@@ -87,7 +89,9 @@ Setup:
 
 Global flags:
   --config <path>        configuration file (default ~/.config/artcoded-cli.yml, env ARTCODED_CONFIG)
-  --json  --yes/-y  --verbose/-v  --no-color
+  --online               open the page of the backoffice instead (list / show actions)
+  --demo                 mask the amounts and names (screen sharing)
+  --json  --yes/-y  --verbose/-v  --no-color  --version/-V
 `
 
 // display order, like the menu of the backoffice
@@ -113,10 +117,15 @@ func orderedModules() []*Module {
 	return out
 }
 
-func printUsage() {
+func printUsage(cfgPath string) {
 	fmt.Print(usageHeader)
+	visible := visibleModules(cfgPath)
 	fmt.Println("\nModules (artcoded <module> --help):")
 	for _, m := range orderedModules() {
+		// the ones the menu of the backoffice hides are hidden here too
+		if visible != nil && !visible[m] {
+			continue
+		}
 		name := m.Name
 		if len(m.Aliases) > 0 {
 			name += " (" + strings.Join(m.Aliases, ", ") + ")"
@@ -147,6 +156,10 @@ func main() {
 
 func run(argv []string) error {
 	args := parseArgs(argv)
+	// artcoded dashboard = artcoded home dashboard
+	if len(args.pos) > 0 && (args.pos[0] == "dashboard" || args.pos[0] == "dash") {
+		args.pos = append([]string{"home", "dashboard"}, args.pos[1:]...)
+	}
 	if args.flags["no-color"] != nil {
 		useColor = false
 	}
@@ -163,10 +176,14 @@ func run(argv []string) error {
 	c.jsonOut = c.boolFlag("json")
 	c.yes = c.boolFlag("yes")
 	c.interactive = isInteractive()
+	demoMode = c.boolFlag("demo")
 
+	if c.boolFlag("version") && cmd == "" {
+		cmd = "version"
+	}
 	switch cmd {
-	case "version", "--version":
-		fmt.Println("artcoded " + version)
+	case "version":
+		fmt.Println("artcoded " + versionString())
 		return nil
 	case "help", "man":
 		if t, ok := c.pos(); ok {
@@ -185,7 +202,7 @@ func run(argv []string) error {
 			page(moduleHelp(m))
 			return nil
 		}
-		printUsage()
+		printUsage(cfgPath)
 		return nil
 	case "init", "setup":
 		return runInit(c, cfgPath)
@@ -197,7 +214,7 @@ func run(argv []string) error {
 	}
 	if cmd == "" {
 		// the menu only when asked: artcoded menu
-		printUsage()
+		printUsage(cfgPath)
 		if _, err := os.Stat(cfgPath); err != nil {
 			fmt.Println("\nFirst time? Run: artcoded init")
 		}
@@ -256,6 +273,12 @@ func run(argv []string) error {
 	}
 	c.cfg = cfg
 	c.api = newAPI(cfg, c.boolFlag("verbose"))
+	if !c.has("demo") {
+		demoMode = cfg.Demo
+	}
+	if demoMode && c.jsonOut {
+		return errors.New("--json shows the raw data: not in demo mode (--demo / demo: true in the config)")
+	}
 
 	switch cmd {
 	case "login":
@@ -265,6 +288,10 @@ func run(argv []string) error {
 			return err
 		}
 		c.api.token = t
+		var me M
+		if c.api.Get("/api/personal-info/@me", nil, &me) == nil {
+			refreshMenuCache(c.api, cfg, strList(me, "authorities"))
+		}
 		return whoami(c)
 	case "logout":
 		if err := c.api.auth.Logout(); err != nil {
@@ -288,6 +315,9 @@ func run(argv []string) error {
 			return moduleMenu(c, mm, true)
 		}
 		return runMenu(c)
+	}
+	if c.boolFlag("online") {
+		return openOnline(c, m, act)
 	}
 	return act.Run(c)
 }
@@ -536,6 +566,7 @@ func runInit(c *Ctx, path string) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
+	refreshMenuCache(api, cfg, strList(me, "authorities"))
 	info("logged in as %s (%s), configuration saved to %s", str(me, "username"), str(me, "authorities"), cfg.path)
 	return nil
 }
@@ -557,6 +588,20 @@ func menuEntries(c *Ctx) ([]menuEntry, error) {
 	var me M
 	_ = c.api.Get("/api/personal-info/@me", nil, &me)
 	roles := strList(me, "authorities")
+	saveMenuCache(c.cfg, menuCache{Links: links, Roles: roles})
+	return entriesOf(links, roles), nil
+}
+
+// refreshMenuCache reads the menu of the backend for the module list of the usage
+func refreshMenuCache(api *API, cfg *Config, roles []string) {
+	var links []M
+	if api.Get("/api/settings/menu-link", nil, &links) == nil {
+		saveMenuCache(cfg, menuCache{Links: links, Roles: roles})
+	}
+}
+
+// entriesOf: the modules the menu of the backoffice shows (visible links, frontend only pages for the roles)
+func entriesOf(links []M, roles []string) []menuEntry {
 	seen := map[*Module]bool{}
 	var out []menuEntry
 	routes := map[string]bool{}
@@ -604,12 +649,49 @@ func menuEntries(c *Ctx) ([]menuEntry, error) {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].order < out[j].order })
-	return out, nil
+	return out
+}
+
+// the menu last read from the backend: the usage lists only these modules, without a request
+type menuCache struct {
+	Links []M      `json:"links"`
+	Roles []string `json:"roles"`
+}
+
+func menuCachePath(cfg *Config) string {
+	return strings.Replace(tokenCachePath(cfg), "tokens-", "menu-", 1)
+}
+
+func saveMenuCache(cfg *Config, mc menuCache) {
+	if data, err := json.Marshal(mc); err == nil {
+		_ = os.WriteFile(menuCachePath(cfg), data, 0o600)
+	}
+}
+
+// visibleModules: the modules of the menu of the backoffice (nil: unknown, every module)
+func visibleModules(cfgPath string) map[*Module]bool {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(menuCachePath(cfg))
+	if err != nil {
+		return nil
+	}
+	var mc menuCache
+	if json.Unmarshal(data, &mc) != nil || len(mc.Links) == 0 {
+		return nil
+	}
+	set := map[*Module]bool{}
+	for _, e := range entriesOf(mc.Links, mc.Roles) {
+		set[e.module] = true
+	}
+	return set
 }
 
 func runMenu(c *Ctx) error {
 	if !c.interactive {
-		printUsage()
+		printUsage(c.cfg.path)
 		return nil
 	}
 	entries, err := menuEntries(c)
@@ -775,4 +857,37 @@ func runReset(c *Ctx, path string) error {
 	}
 	fmt.Println("run: artcoded init")
 	return nil
+}
+
+// versionString: the release version, else what go knows of the build (go install, a git checkout)
+func versionString() string {
+	if version != "dev" {
+		return version
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	rev, dirty := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if rev == "" {
+		return version
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	if dirty {
+		rev += "-dirty"
+	}
+	return "dev-" + rev
 }

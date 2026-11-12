@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -207,6 +208,17 @@ func (f *fake) handler() http.Handler {
 	})
 	api("/api/administrative-document/save", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) })
 	api("/api/notification", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, []M{}) })
+	api("/api/personal-info", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, M{"demoMode": false}) })
+	api("/api/timesheet/estimate-total-to-be-invoiced-this-month", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 7200.0) })
+	api("/api/dossier/active-dossier", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, M{"id": "d1", "name": "2026-Q4", "tvaToBePaid": 1234.5})
+	})
+	api("/api/fee/search", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, M{"content": []M{{"id": "f9", "subject": "Train Brussels-Paris"}}, "page": M{"totalElements": 4, "totalPages": 1, "number": 0}})
+	})
+	api("/api/timesheet", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, M{"2026": M{"ACME": []M{{"id": "ts1", "name": "November", "clientName": "ACME", "year": 2026, "month": 11, "numberOfHoursWorked": 56, "numberOfWorkingDays": 7}}}})
+	})
 	api("/api/invoice/find-all-summaries", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, []M{
 			{"period": "01/2025", "client": "ACME", "amount": 20, "amountType": "DAYS", "subTotal": 12000, "dateOfInvoice": "2025-02-01T00:00:00.000+00:00"},
@@ -627,5 +639,101 @@ func TestStats(t *testing.T) {
 	}
 	if bar(1, 1, 4) != "████" || bar(1, 8*4, 4) != "▏" || bar(0, 1, 4) != "" {
 		t.Error("bars")
+	}
+}
+
+func TestDashboard(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	out, err := e.cli(t, "dashboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"To invoice this month", "7 200,00 €", "Unprocessed expenses", "4", "Train Brussels-Paris",
+		"2026-Q4", "Revenue per month", "Cumulated revenue", "Open timesheets", "ACME", "56 h"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dashboard misses %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDemoMasks(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	out, err := e.cli(t, "dashboard", "--demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"7 200", "ACME", "1 234"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("demo shows %q:\n%s", leak, out)
+		}
+	}
+	if !strings.Contains(out, "•••• €") || !strings.Contains(out, "A•••••") {
+		t.Errorf("demo masks:\n%s", out)
+	}
+	out, _ = e.cli(t, "stats", "clients", "--demo")
+	if strings.Contains(out, "ACME") || strings.Contains(out, "19 000") {
+		t.Errorf("stats clients in demo:\n%s", out)
+	}
+	if _, err := e.cli(t, "invoices", "list", "--demo", "--json"); err == nil {
+		t.Error("--json in demo mode must be refused")
+	}
+	demoMode = false
+}
+
+func TestOnline(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	opened := filepath.Join(e.dir, "opened")
+	browser := filepath.Join(e.dir, "browser.sh")
+	_ = os.WriteFile(browser, []byte("#!/bin/sh\necho \"$1\" >> "+opened+"\n"), 0o755)
+	t.Setenv("BROWSER", browser)
+	if _, err := e.cli(t, "expenses", "list", "--online"); err == nil || !strings.Contains(err.Error(), "frontend_url") {
+		t.Fatalf("expected the frontend_url hint, got %v", err)
+	}
+	if _, err := e.cli(t, "config", "set", "frontend_url", "https://bo.example.org"); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"expenses", "list", "--processed"}, {"timesheets", "show", "ts9"}, {"dashboard"}, {"invoices", "list", "--deleted"}} {
+		if _, err := e.cli(t, append(args, "--online")...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	if _, err := e.cli(t, "expenses", "tag", "--online"); err == nil {
+		t.Error("an action without a page refuses --online")
+	}
+	// the browsers are started in the background: wait for the 4 of them, in any order
+	var lines []string
+	for i := 0; i < 100 && len(lines) < 4; i++ {
+		time.Sleep(20 * time.Millisecond)
+		got, _ := os.ReadFile(opened)
+		lines = strings.Fields(string(got))
+	}
+	sort.Strings(lines)
+	want := []string{"https://bo.example.org/", "https://bo.example.org/fee/processed",
+		"https://bo.example.org/invoice/deleted-logically", "https://bo.example.org/timesheets/timesheet/ts9"}
+	if strings.Join(lines, " ") != strings.Join(want, " ") {
+		t.Fatalf("opened %v, want %v", lines, want)
+	}
+}
+
+func TestUsageFollowsTheMenu(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	cfg, _ := loadConfig(e.config)
+	// gallery hidden in the settings
+	if _, err := menuEntries(&Ctx{cfg: cfg, api: newAPI(cfg, false), out: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := e.cli(t)
+	if strings.Contains(out, "gallery") || !strings.Contains(out, "invoices") || !strings.Contains(out, "stats") {
+		t.Fatalf("usage:\n%s", out)
+	}
+	if strings.Contains(out, "tasks (") {
+		t.Fatalf("tasks is not in the menu of the fake backend:\n%s", out)
+	}
+	if v, _ := e.cli(t, "--version"); !strings.HasPrefix(v, "artcoded ") {
+		t.Fatalf("version %q", v)
 	}
 }

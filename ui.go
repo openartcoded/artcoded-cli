@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"unicode/utf8"
 )
 
@@ -330,28 +329,6 @@ func openInBrowser(target string) error {
 	}
 	cmd.Stdout, cmd.Stderr = nil, nil
 	return cmd.Start()
-}
-
-// table prints rows aligned. Cells are cut at 60 chars (full values with --json).
-func table(w io.Writer, headers []string, rows [][]string) {
-	if len(rows) == 0 {
-		fmt.Fprintln(w, dim("(nothing)"))
-		return
-	}
-	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	h := make([]string, len(headers))
-	for i, x := range headers {
-		h[i] = strings.ToUpper(x)
-	}
-	fmt.Fprintln(tw, strings.Join(h, "\t"))
-	for _, r := range rows {
-		cells := make([]string, len(r))
-		for i, c := range r {
-			cells[i] = truncate(strings.ReplaceAll(strings.ReplaceAll(c, "\n", " "), "\t", " "), 60)
-		}
-		fmt.Fprintln(tw, strings.Join(cells, "\t"))
-	}
-	tw.Flush()
 }
 
 // details prints key / value lines (empty values skipped)

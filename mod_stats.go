@@ -18,6 +18,7 @@ func init() {
 			{Name: "years", Aliases: []string{"overview", "per-year"}, Help: "revenue, days, per day and relative per year", Run: statsYears},
 			{Name: "months", Aliases: []string{"per-month"}, Help: "revenue and days invoiced per month", Usage: "[--year 2026 | --all]", Run: statsMonths},
 			{Name: "clients", Aliases: []string{"per-client"}, Help: "revenue per client", Usage: "[--year 2026]", Run: statsClients},
+			{Name: "revenue", Aliases: []string{"revenue-progress"}, Help: "cumulated revenue month by month, one line per year", Usage: "[--years 4]", Run: statsRevenue},
 			{Name: "hours", Help: "hours worked per year, per client (timesheets)", Run: statsHours},
 			{Name: "hours-progress", Aliases: []string{"progress"}, Help: "cumulated hours month by month, one line per year", Usage: "[--client name]", Run: statsHoursProgress},
 			{Name: "hours-clients", Help: "hours per client and year, with the progress of this year", Run: statsHoursClients},
@@ -55,38 +56,6 @@ func terminalColumns() int {
 
 // barWidth: what is left for the bars after the other columns
 func barWidth(used int) int { return max(10, min(60, terminalColumns()-used)) }
-
-func padRight(s string, n int) string {
-	if w := runeWidth(s); w < n {
-		return s + strings.Repeat(" ", n-w)
-	}
-	return s
-}
-
-func padLeft(s string, n int) string {
-	if w := runeWidth(s); w < n {
-		return strings.Repeat(" ", n-w) + s
-	}
-	return s
-}
-
-// runeWidth without the ansi codes
-func runeWidth(s string) int {
-	n, esc := 0, false
-	for _, r := range s {
-		switch {
-		case r == 0x1b:
-			esc = true
-		case esc:
-			if r == 'm' {
-				esc = false
-			}
-		default:
-			n++
-		}
-	}
-	return n
-}
 
 func fnum(v float64) string {
 	if v == math.Trunc(v) {
@@ -220,34 +189,41 @@ func statsYears(c *Ctx) error {
 	for _, y := range years {
 		maxRev = max(maxRev, st.perYear[y].revenue)
 	}
-	fmt.Fprintf(c.out, "%s  %s\n\n", bold("Per year"), dim(fmt.Sprintf("all time: %s · %s days · %d invoices", money(st.total), fnum(st.days), st.totalInvoices)))
-	w := barWidth(95)
-	head := padRight("YEAR", 6) + padLeft("REVENUE", 16) + "  " + padRight("", w) + padLeft("DAYS", 8) + padLeft("PER DAY", 14)
+	fmt.Fprintf(c.out, "%s  %s\n\n", bold("Per year"), dim(fmt.Sprintf("all time: %s · %s days · %d invoices", money(st.total), fnum(math.Round(st.days*10)/10), st.totalInvoices)))
+	head := []string{"year", "revenue", "", "days", "per day"}
 	if worked != nil {
-		head += padLeft("RELATIVE", 14)
+		head = append(head, "relative")
 	}
-	fmt.Fprintln(c.out, head+padLeft("INVOICES", 10))
+	head = append(head, "invoices", "vs previous")
 	current := time.Now().In(brussels).Year()
-	for _, y := range years {
+	var rows [][]string
+	for i, y := range years {
 		ys := st.perYear[y]
 		perDay := ""
 		if ys.days > 0 {
 			perDay = money(ys.revenue / ys.days)
 		}
-		year := strconv.Itoa(y)
+		label := strconv.Itoa(y)
 		if y == current {
-			year = bold(year)
+			label = bold(label)
 		}
-		line := padRight(year, 6) + padLeft(money(ys.revenue), 16) + "  " + padRight(cyan(bar(ys.revenue, maxRev, w)), w) + padLeft(fnum(math.Round(ys.days*10)/10), 8) + padLeft(perDay, 14)
+		row := []string{label, money(ys.revenue), cyan(bar(ys.revenue, maxRev, barWidth(100))), fnum(math.Round(ys.days*10) / 10), perDay}
 		if worked != nil {
 			rel := ""
 			if d := num(worked, strconv.Itoa(y)); d > 0 {
 				rel = money(ys.revenue / d)
 			}
-			line += padLeft(rel, 14)
+			row = append(row, rel)
 		}
-		fmt.Fprintln(c.out, line+padLeft(strconv.Itoa(ys.invoices), 10))
+		evolution := ""
+		if i+1 < len(years) && y != current {
+			if prev := st.perYear[years[i+1]]; prev != nil && prev.revenue > 0 {
+				evolution = pctLabel(ys.revenue/prev.revenue - 1)
+			}
+		}
+		rows = append(rows, append(row, strconv.Itoa(ys.invoices), evolution))
 	}
+	table(c.out, head, rows)
 	if worked != nil {
 		fmt.Fprintln(c.out, "\n"+dim("relative: revenue / calendar days worked (timesheets), a day counts once; only the years with a timesheet every month, and this one"))
 	}
@@ -263,7 +239,7 @@ func periodYear(p string) string {
 }
 
 func statsMonths(c *Ctx) error {
-	st, raw, err := loadInvoiceStats(c)
+	st, _, err := loadInvoiceStats(c)
 	if err != nil {
 		return err
 	}
@@ -287,28 +263,44 @@ func statsMonths(c *Ctx) error {
 		}
 		return c.printJSON(out)
 	}
-	_ = raw
 	title := "Per month"
 	if year != "" {
 		title += " " + year
 	}
-	fmt.Fprintf(c.out, "%s  %s\n\n", bold(title), dim("revenue excl. VAT and days invoiced · other year: --year, every month: --all"))
+	fmt.Fprintf(c.out, "%s  %s\n\n", bold(title), dim("revenue excl. VAT and days invoiced, by period of the invoices · other year: --year, every month: --all"))
 	if len(rows) == 0 {
 		fmt.Fprintln(c.out, dim("no invoice"))
 		return nil
 	}
-	maxE := 0.0
+	var labels []string
+	var values []float64
 	var total, days float64
 	for _, p := range rows {
-		maxE = max(maxE, p.earnings)
+		label := p.period
+		if year != "" {
+			if mm, err := strconv.Atoi(strings.SplitN(p.period, "/", 2)[0]); err == nil && mm >= 1 && mm <= 12 {
+				label = monthNames[mm-1]
+			}
+		}
+		labels = append(labels, label)
+		values = append(values, p.earnings)
 		total += p.earnings
 		days += p.days
 	}
-	w := barWidth(42)
-	for _, p := range rows {
-		fmt.Fprintf(c.out, "%s %s %s %s\n", padRight(p.period, 8), padLeft(money(p.earnings), 14), padRight(cyan(bar(p.earnings, maxE, w)), w), dim(fnum(math.Round(p.days*10)/10)+" d"))
+	if len(rows) <= 24 {
+		fmt.Fprint(c.out, columnChart(labels, values, 8, "€", cyan))
+		fmt.Fprintln(c.out)
 	}
-	fmt.Fprintf(c.out, "%s %s %s %s\n", padRight("", 8), padLeft(bold(money(total)), 14), padRight("", w), dim(fnum(math.Round(days*10)/10)+" d"))
+	var tr [][]string
+	for _, p := range rows {
+		perDay := ""
+		if p.days > 0 {
+			perDay = money(p.earnings / p.days)
+		}
+		tr = append(tr, []string{p.period, money(p.earnings), fnum(math.Round(p.days*10) / 10), perDay})
+	}
+	tr = append(tr, []string{bold("total"), bold(money(total)), bold(fnum(math.Round(days*10) / 10)), ""})
+	table(c.out, []string{"period", "revenue", "days", "per day"}, tr)
 	return nil
 }
 
@@ -318,14 +310,20 @@ func statsClients(c *Ctx) error {
 		return err
 	}
 	per := st.perClient
+	days := map[string]float64{}
 	year := c.quiet("year", "")
 	if year != "" {
 		per = map[string]float64{}
-		for _, s := range raw {
-			if t, ok := toTime(get(s, "dateOfInvoice")); ok && strconv.Itoa(t.Year()) == year {
-				per[defStr(str(s, "client"), "N/A")] += num(s, "subTotal")
-			}
+	}
+	for _, s := range raw {
+		t, ok := toTime(get(s, "dateOfInvoice"))
+		if year != "" && (!ok || strconv.Itoa(t.Year()) != year) {
+			continue
 		}
+		if year != "" {
+			per[defStr(str(s, "client"), "N/A")] += num(s, "subTotal")
+		}
+		days[defStr(str(s, "client"), "N/A")] += amountInDays(s)
 	}
 	type kv struct {
 		client string
@@ -347,19 +345,19 @@ func statsClients(c *Ctx) error {
 		title += " " + year
 	}
 	fmt.Fprintf(c.out, "%s  %s\n\n", bold(title), dim("revenue excl. VAT · a year: --year"))
-	nameW := 10
+	var tr [][]string
 	for _, r := range rows {
-		nameW = max(nameW, min(30, runeWidth(r.client)))
-	}
-	w := barWidth(nameW + 30)
-	for _, r := range rows {
-		share := ""
+		share, perDay := "", ""
 		if total > 0 {
-			share = fmt.Sprintf("%3.0f%%", r.total/total*100)
+			share = fmt.Sprintf("%.0f%%", r.total/total*100)
 		}
-		fmt.Fprintf(c.out, "%s %s %s %s\n", padRight(truncate(r.client, 30), nameW), padLeft(money(r.total), 14), padRight(cyan(bar(r.total, maxT, w)), w), dim(share))
+		if d := days[r.client]; d > 0 {
+			perDay = money(r.total / d)
+		}
+		tr = append(tr, []string{sens(r.client), money(r.total), share, cyan(bar(r.total, maxT, barWidth(80))), fnum(math.Round(days[r.client]*10) / 10), perDay})
 	}
-	fmt.Fprintf(c.out, "%s %s\n", padRight("", nameW), padLeft(bold(money(total)), 14))
+	tr = append(tr, []string{bold("total"), bold(money(total)), "", "", "", ""})
+	table(c.out, []string{"client", "revenue", "share", "", "days", "per day"}, tr)
 	return nil
 }
 
@@ -458,15 +456,33 @@ func statsHours(c *Ctx) error {
 	}
 	fmt.Fprintln(c.out)
 	for i, sname := range series {
-		fmt.Fprintf(c.out, "  %s %s", colors[i%len(colors)]("█"), sname)
+		fmt.Fprintf(c.out, "  %s %s", colors[i%len(colors)]("█"), sens(sname))
 	}
 	fmt.Fprintln(c.out)
+	fmt.Fprintln(c.out)
+	head := append([]string{"year"}, series...)
+	for i := 1; i < len(head); i++ {
+		head[i] = sens(head[i])
+	}
+	head = append(head, "total")
+	var tr [][]string
+	for _, y := range years {
+		row := []string{strconv.Itoa(y)}
+		total := 0.0
+		for _, sname := range series {
+			v := perYear[y][sname]
+			total += v
+			row = append(row, mark(v > 0, fnum(hoursOf(v))))
+		}
+		tr = append(tr, append(row, bold(fnum(hoursOf(total)))))
+	}
+	table(c.out, head, tr)
 	return nil
 }
 
 var monthNames = []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 
-// statsHoursProgress: cumulated hours month by month, one column per year, this year stops at this month
+// statsHoursProgress: cumulated hours month by month, one line per year, this year stops at this month
 func statsHoursProgress(c *Ctx) error {
 	s, err := needTimesheetStats(c)
 	if err != nil {
@@ -495,48 +511,152 @@ func statsHoursProgress(c *Ctx) error {
 				}
 			}
 			if y > now.Year() || y == now.Year() && m > int(now.Month()) {
-				cum[y] = append(cum[y], -1)
+				cum[y] = append(cum[y], math.NaN())
 			} else {
 				cum[y] = append(cum[y], hoursOf(total))
 			}
 		}
 	}
 	if c.jsonOut {
-		return c.printJSON(cum)
+		out := map[string][]any{}
+		for y, v := range cum {
+			for _, x := range v {
+				if math.IsNaN(x) {
+					out[strconv.Itoa(y)] = append(out[strconv.Itoa(y)], nil)
+				} else {
+					out[strconv.Itoa(y)] = append(out[strconv.Itoa(y)], x)
+				}
+			}
+		}
+		return c.printJSON(out)
 	}
 	title := "Cumulated hours"
 	if client != "" {
-		title += " · " + client
+		title += " · " + sens(client)
 	}
-	fmt.Fprintf(c.out, "%s  %s\n\n", bold(title), dim("month by month, one column per year · one client: --client"))
-	head := padRight("", 5)
+	fmt.Fprintf(c.out, "%s  %s\n\n", bold(title), dim("month by month, one line per year · one client: --client"))
+	// the last years on the chart, every year in the table
+	var series []Series
+	shown := years
+	if len(shown) > 5 {
+		shown = shown[len(shown)-5:]
+	}
+	for i, y := range shown {
+		color := seriesColors[i%len(seriesColors)]
+		if y == now.Year() {
+			color = cyan
+		} else if y == now.Year()-1 {
+			color = yellow
+		} else {
+			color = dim
+		}
+		series = append(series, Series{Name: strconv.Itoa(y), Values: cum[y], Color: color})
+	}
+	fmt.Fprint(c.out, lineChart(series, monthNames, 48, 10, "h"))
+	fmt.Fprintln(c.out)
+	head := []string{""}
 	for _, y := range years {
-		head += padLeft(strconv.Itoa(y), 9)
+		head = append(head, strconv.Itoa(y))
 	}
-	fmt.Fprintln(c.out, dim(head))
+	var tr [][]string
 	for m := 0; m < 12; m++ {
-		line := padRight(monthNames[m], 5)
+		row := []string{monthNames[m]}
 		for _, y := range years {
-			v := cum[y][m]
 			cell := ""
-			if v >= 0 {
+			if v := cum[y][m]; !math.IsNaN(v) {
 				cell = fnum(v)
 			}
-			if y == now.Year() {
-				cell = bold(cell)
-			}
-			line += padLeft(cell, 9)
+			row = append(row, cell)
 		}
-		fmt.Fprintln(c.out, line)
+		tr = append(tr, row)
 	}
-	// this year against the same months of the previous one
+	table(c.out, head, tr)
 	if len(years) > 1 && years[len(years)-1] == now.Year() {
 		m := int(now.Month()) - 1
 		cur, prev := cum[now.Year()][m], cum[now.Year()-1]
-		if prev != nil && prev[m] > 0 {
-			fmt.Fprintf(c.out, "\n%s %s %s\n", dim("this year so far vs the same months of"), dim(strconv.Itoa(now.Year()-1)+":"), pctLabel(cur/prev[m]-1))
+		if prev != nil && prev[m] > 0 && !math.IsNaN(cur) {
+			fmt.Fprintf(c.out, "\n%s %s\n", dim(fmt.Sprintf("%d so far vs the same months of %d:", now.Year(), now.Year()-1)), pctLabel(cur/prev[m]-1))
 		}
 	}
+	return nil
+}
+
+// statsRevenue: cumulated revenue month by month (by date of invoice), one line per year
+func statsRevenue(c *Ctx) error {
+	_, raw, err := loadInvoiceStats(c)
+	if err != nil {
+		return err
+	}
+	now := time.Now().In(brussels)
+	perMonth := map[int][]float64{}
+	for _, s := range raw {
+		t, ok := toTime(get(s, "dateOfInvoice"))
+		if !ok {
+			continue
+		}
+		if perMonth[t.Year()] == nil {
+			perMonth[t.Year()] = make([]float64, 12)
+		}
+		perMonth[t.Year()][int(t.Month())-1] += num(s, "subTotal")
+	}
+	years := sortedYears(perMonth, false)
+	if y := c.quiet("years", ""); y != "" {
+		if n, err := strconv.Atoi(y); err == nil && n > 0 && n < len(years) {
+			years = years[len(years)-n:]
+		}
+	} else if len(years) > 4 {
+		years = years[len(years)-4:]
+	}
+	cum := map[int][]float64{}
+	for _, y := range years {
+		total := 0.0
+		for m := 0; m < 12; m++ {
+			total += perMonth[y][m]
+			if y == now.Year() && m+1 > int(now.Month()) {
+				cum[y] = append(cum[y], math.NaN())
+			} else {
+				cum[y] = append(cum[y], total)
+			}
+		}
+	}
+	if c.jsonOut {
+		return c.printJSON(perMonth)
+	}
+	fmt.Fprintf(c.out, "%s  %s\n\n", bold("Cumulated revenue"), dim("excl. VAT, by date of invoice, one line per year · how many years: --years N"))
+	if len(years) == 0 {
+		fmt.Fprintln(c.out, dim("no invoice yet"))
+		return nil
+	}
+	var series []Series
+	for _, y := range years {
+		color := dim
+		switch y {
+		case now.Year():
+			color = cyan
+		case now.Year() - 1:
+			color = yellow
+		}
+		series = append(series, Series{Name: strconv.Itoa(y), Values: cum[y], Color: color})
+	}
+	fmt.Fprint(c.out, lineChart(series, monthNames, 48, 10, "€"))
+	fmt.Fprintln(c.out)
+	head := []string{""}
+	for _, y := range years {
+		head = append(head, strconv.Itoa(y))
+	}
+	var tr [][]string
+	for m := 0; m < 12; m++ {
+		row := []string{monthNames[m]}
+		for _, y := range years {
+			cell := ""
+			if v := cum[y][m]; !math.IsNaN(v) {
+				cell = money(v)
+			}
+			row = append(row, cell)
+		}
+		tr = append(tr, row)
+	}
+	table(c.out, head, tr)
 	return nil
 }
 
@@ -562,7 +682,7 @@ func statsHoursClients(c *Ctx) error {
 	}
 	row := func(client string) []string {
 		of := func(r tsRow) bool { return client == "" || r.client == client }
-		label := client
+		label := sens(client)
 		if client == "" {
 			label = bold("Total")
 		}
@@ -609,23 +729,23 @@ func statsDossiers(c *Ctx) error {
 	if c.jsonOut {
 		return c.printJSON(l)
 	}
-	maxV := 0.0
-	nameW := 8
-	for _, d := range l {
-		maxV = max(maxV, num(d, "totalEarnings"), num(d, "totalExpenses"))
-		nameW = max(nameW, min(24, runeWidth(str(d, "name"))))
-	}
 	fmt.Fprintf(c.out, "%s  %s %s  %s %s\n\n", bold("Dossiers"), green("█"), dim("earnings"), red("█"), dim("expenses"))
 	if len(l) == 0 {
 		fmt.Fprintln(c.out, dim("no closed dossier"))
 		return nil
 	}
-	w := barWidth(nameW + 18)
+	maxV := 0.0
+	for _, d := range l {
+		maxV = max(maxV, num(d, "totalEarnings"), num(d, "totalExpenses"))
+	}
+	w := barWidth(90)
+	var tr [][]string
 	for _, d := range l {
 		e, x := num(d, "totalEarnings"), num(d, "totalExpenses")
-		fmt.Fprintf(c.out, "%s %s %s\n", padRight(truncate(str(d, "name"), 24), nameW), padLeft(money(e), 14), green(bar(e, maxV, w)))
-		fmt.Fprintf(c.out, "%s %s %s\n", padRight("", nameW), padLeft(money(x), 14), red(bar(x, maxV, w)))
+		tr = append(tr, []string{str(d, "name"), fdate(d, "closedDate"), money(e), money(x), money(e - x), green(bar(e, maxV, w))})
+		tr = append(tr, []string{"", "", "", "", "", red(bar(x, maxV, w))})
 	}
+	table(c.out, []string{"dossier", "closed", "earnings", "expenses", "balance", ""}, tr)
 	return nil
 }
 
@@ -644,18 +764,22 @@ func statsExpenses(c *Ctx) error {
 	if c.jsonOut {
 		return c.printJSON(rows)
 	}
-	maxV, total := 0.0, 0.0
-	nameW := 8
+	maxV, total, vat := 0.0, 0.0, 0.0
 	for _, s := range rows {
 		maxV = max(maxV, num(s, "totalHVAT"))
 		total += num(s, "totalHVAT")
-		nameW = max(nameW, min(24, runeWidth(str(s, "tag"))))
+		vat += num(s, "totalVAT")
 	}
-	fmt.Fprintf(c.out, "%s  %s\n\n", bold("Expenses per tag"), dim("excl. VAT (vat aside), the tag OTHER left out"))
-	w := barWidth(nameW + 34)
+	fmt.Fprintf(c.out, "%s  %s\n\n", bold("Expenses per tag"), dim("excl. VAT, the tag OTHER left out like on the home page"))
+	var tr [][]string
 	for _, s := range rows {
-		fmt.Fprintf(c.out, "%s %s %s %s\n", padRight(truncate(str(s, "tag"), 24), nameW), padLeft(moneyOf(s, "totalHVAT"), 14), padRight(yellow(bar(num(s, "totalHVAT"), maxV, w)), w), dim("vat "+moneyOf(s, "totalVAT")))
+		share := ""
+		if total > 0 {
+			share = fmt.Sprintf("%.0f%%", num(s, "totalHVAT")/total*100)
+		}
+		tr = append(tr, []string{str(s, "tag"), moneyOf(s, "totalHVAT"), moneyOf(s, "totalVAT"), share, yellow(bar(num(s, "totalHVAT"), maxV, barWidth(70)))})
 	}
-	fmt.Fprintf(c.out, "%s %s\n", padRight("", nameW), padLeft(bold(money(total)), 14))
+	tr = append(tr, []string{bold("total"), bold(money(total)), bold(money(vat)), "", ""})
+	table(c.out, []string{"tag", "excl. vat", "vat", "share", ""}, tr)
 	return nil
 }

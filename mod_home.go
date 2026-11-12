@@ -10,7 +10,7 @@ func init() {
 		Name: "home", Aliases: []string{"dashboard"}, Title: "Home", Routes: []string{""},
 		Help: "dashboard, todos, post-its, memo dates, notifications",
 		Actions: []*Action{
-			{Name: "dashboard", Aliases: []string{"show"}, Help: "overview: notifications, todos, next tasks, this month", Run: dashboard},
+			{Name: "dashboard", Aliases: []string{"show"}, Help: "the most useful figures: to invoice, revenue, hours, expenses, charts, tasks", Run: dashboard},
 			{Name: "todos", Help: "list the todos", Usage: "[--all]", Run: todoList},
 			{Name: "todo-add", Help: "add a todo", Usage: "<title>", Run: todoAdd},
 			{Name: "todo-done", Help: "mark todos done / not done", Usage: "<id...>", Run: todoToggle},
@@ -26,74 +26,6 @@ func init() {
 			notificationsDeleteAction(),
 		},
 	})
-}
-
-func dashboard(c *Ctx) error {
-	var me M
-	if err := c.api.Get("/api/personal-info/@me", nil, &me); err != nil {
-		return err
-	}
-	var notifs, todos, tasks []M
-	var estimate any
-	var active M
-	_ = c.api.Get("/api/notification", nil, &notifs)
-	_ = c.api.Get("/api/todo", nil, &todos)
-	_ = c.api.Get("/api/reminder-task/find-next-ten-tasks", nil, &tasks)
-	_ = c.api.Get("/api/timesheet/estimate-total-to-be-invoiced-this-month", nil, &estimate)
-	_ = c.api.Post("/api/dossier/active-dossier", nil, nil, &active)
-	if c.jsonOut {
-		return c.printJSON(M{"user": me, "notifications": notifs, "todos": todos, "nextTasks": tasks, "estimateThisMonth": estimate, "activeDossier": active})
-	}
-	unseen := 0
-	for _, n := range notifs {
-		if !boolean(n, "seen") {
-			unseen++
-		}
-	}
-	fmt.Fprintf(c.out, "%s %s\n\n", bold("Hello "+str(me, "username")), dim("("+str(me, "authorities")+")"))
-	d := []string{"notifications", fmt.Sprintf("%d unseen / %d", unseen, len(notifs))}
-	if f, ok := estimate.(float64); ok {
-		d = append(d, "to invoice this month", money(f))
-	}
-	if active != nil && str(active, "name") != "" {
-		d = append(d, "active dossier", str(active, "name"))
-	}
-	details(c.out, d...)
-	var open []M
-	for _, t := range todos {
-		if !boolean(t, "done") {
-			open = append(open, t)
-		}
-	}
-	if len(open) > 0 {
-		fmt.Fprintln(c.out, "\n"+bold("Todos"))
-		for _, t := range open {
-			fmt.Fprintf(c.out, "  ☐ %s\n", str(t, "title"))
-		}
-	}
-	if len(tasks) > 0 {
-		fmt.Fprintln(c.out, "\n"+bold("Next tasks"))
-		rows := [][]string{}
-		for i, t := range tasks {
-			if i >= 5 {
-				break
-			}
-			rows = append(rows, []string{fdatetime(t, "nextDate"), str(t, "title"), str(t, "actionKey")})
-		}
-		table(c.out, []string{"when", "task", "action"}, rows)
-	}
-	if unseen > 0 {
-		fmt.Fprintln(c.out, "\n"+bold("Unseen notifications"))
-		for i, n := range notifs {
-			if i >= 10 {
-				break
-			}
-			if !boolean(n, "seen") {
-				fmt.Fprintf(c.out, "  %s %s %s\n", dim(fdatetime(n, "receivedDate")), str(n, "title"), dim(str(n, "type")))
-			}
-		}
-	}
-	return nil
 }
 
 func loadTodos(c *Ctx) ([]M, error) {

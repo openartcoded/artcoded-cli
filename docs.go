@@ -36,8 +36,14 @@ var (
 var docs = map[string]Doc{
 	// ---------------------------------------------------------------- home
 	"home dashboard": {
-		Desc:     "Overview of the day: unseen notifications, open todos, the next tasks, the amount to invoice this month and the active dossier.",
-		Examples: []string{"artcoded home dashboard", "# as json, e.g. for a status bar\nartcoded home dashboard --json"},
+		Desc: `The figures checked every day (also: artcoded dashboard):
+  - key figures: to invoice this month, revenue of the year against the previous one at the same date,
+    days invoiced and revenue per day, hours this month, unprocessed expenses, active dossier, notifications;
+  - revenue per month of the last 12 months (column chart) and the cumulated revenue of this year against
+    the previous one (line chart);
+  - the open timesheets, the next tasks, the todos and the unseen notifications.
+What the role cannot see is left out. The demo mode of the backoffice (company settings) masks it like --demo.`,
+		Examples: []string{"artcoded dashboard", "# while sharing the screen\nartcoded dashboard --demo", "artcoded dashboard --online", "# as json, e.g. for a status bar\nartcoded home dashboard --json"},
 	},
 	"home todos": {
 		Desc:     "The todos of the home page. Done ones are hidden unless --all.",
@@ -112,7 +118,7 @@ The relative column needs the timesheets (admin).`,
 		Examples: []string{"artcoded stats years", "artcoded stats years --json"},
 	},
 	"stats months": {
-		Desc:     "Revenue (bars) and days invoiced per month (period of the invoices) of a year: this one, or the previous one when this one has no invoice yet.",
+		Desc:     "Revenue per month (period of the invoices) of a year: a column chart, then the table with the days invoiced and the revenue per day. This year by default, or the previous one when this one has no invoice yet.",
 		Flags:    fl("--year YEAR | another year", "--all | every month since the first invoice"),
 		Examples: []string{"artcoded stats months", "artcoded stats months --year 2025", "artcoded stats months --all"},
 	},
@@ -121,12 +127,17 @@ The relative column needs the timesheets (admin).`,
 		Flags:    fl("--year YEAR | only the invoices of this year"),
 		Examples: []string{"artcoded stats clients", "artcoded stats clients --year 2026"},
 	},
+	"stats revenue": {
+		Desc:     "Cumulated revenue (excl. VAT, by date of invoice) month by month, one line per year: a line chart (this year in cyan, the previous one in yellow) and the table.",
+		Flags:    fl("--years N | how many years (default the last 4)"),
+		Examples: []string{"artcoded stats revenue", "artcoded stats revenue --years 2 --demo"},
+	},
 	"stats hours": {
-		Desc:     "Hours worked per year (timesheets), stacked per client: the 5 most worked apart, the others in Other.",
+		Desc:     "Hours worked per year (timesheets), stacked per client: the 5 most worked apart, the others in Other. The chart, then the table.",
 		Examples: []string{"artcoded stats hours"},
 	},
 	"stats hours-progress": {
-		Desc:     "Cumulated hours month by month, one column per year (this year stops at this month), and this year so far against the same months of the previous one.",
+		Desc:     "Cumulated hours month by month: a line chart (the last 5 years) and the table (every year; this year stops at this month), and this year so far against the same months of the previous one.",
 		Flags:    fl("--client NAME | only this client (name contains)"),
 		Examples: []string{"artcoded stats hours-progress", "artcoded stats hours-progress --client acme"},
 	},
@@ -221,7 +232,7 @@ Without options everything is asked. The cron expression has 6 fields: second mi
 	"timesheets show": {
 		Desc:     "The days of a timesheet: hours, type of day, description, project. The empty weekend days are hidden.",
 		Flags:    fl(idArg("timesheet"), idFlag, "--all-days | also the empty weekend days"),
-		Examples: []string{"artcoded timesheets show", "artcoded timesheets show 66c3 --all-days"},
+		Examples: []string{"artcoded timesheets show", "artcoded timesheets show 66c3 --all-days", "# the timesheet in the backoffice\nartcoded timesheets show 66c3 --online"},
 	},
 	"timesheets log": {
 		Desc: `Logs a day: the hours worked, or a day off (sickness, holidays).
@@ -303,6 +314,7 @@ The other options filter inside the set.`,
 			"# what was processed this year\nartcoded expenses list --processed --from 2026-01-01",
 			"artcoded expenses list --processed --tag TRAVEL --size 100",
 			"artcoded expenses list --no-proof",
+			"# the same page in the backoffice\nartcoded expenses list --processed --online",
 			"artcoded expenses list --processed --json | jq '[.content[].priceTot] | add'",
 		},
 	},
@@ -395,7 +407,7 @@ Paths: arguments or --file (repeatable, globs work); asked one per line when mis
   - --deleted: the deleted ones (restorable);
   - --bookmarked: the bookmarked ones.`,
 		Flags:    fl("--archived | the invoices in a dossier", "--deleted | the deleted invoices", "--bookmarked | the bookmarked invoices", pageOpts),
-		Examples: []string{"artcoded invoices list", "artcoded invoices list --archived --size 50", "artcoded invoices list --json | jq '.content[] | {invoiceNumber, total}'"},
+		Examples: []string{"artcoded invoices list", "artcoded invoices list --archived --size 50", "artcoded invoices list --demo", "artcoded invoices list --online", "artcoded invoices list --json | jq '.content[] | {invoiceNumber, total}'"},
 	},
 	"invoices show": {
 		Desc:     "An invoice: client, rows, totals, peppol status, extra files.",

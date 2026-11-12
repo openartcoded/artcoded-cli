@@ -37,7 +37,7 @@ func init() {
 var contractStatuses = []string{"NOT_STARTED_YET", "ONGOING", "DONE"}
 
 func clientDesc(cl M) string {
-	return str(cl, "name") + dim("  "+str(cl, "projectName")+"  "+strings.ToLower(str(cl, "contractStatus")))
+	return sens(str(cl, "name")) + dim("  "+str(cl, "projectName")+"  "+strings.ToLower(str(cl, "contractStatus")))
 }
 
 func clientList(c *Ctx) error {
@@ -61,7 +61,7 @@ func clientList(c *Ctx) error {
 					rate += fmt.Sprintf(" +%d", len(r)-1)
 				}
 			}
-			rows = append(rows, []string{str(cl, "name"), str(cl, "projectName"), rate, strings.ToLower(str(cl, "contractStatus")), fdate(cl, "startDate"), fdate(cl, "endDate"), dim(str(cl, "id"))})
+			rows = append(rows, []string{sens(str(cl, "name")), str(cl, "projectName"), rate, strings.ToLower(str(cl, "contractStatus")), fdate(cl, "startDate"), fdate(cl, "endDate"), dim(str(cl, "id"))})
 		}
 		table(c.out, []string{"client", "project", "rate", "status", "start", "end", "id"}, rows)
 	})
@@ -93,9 +93,9 @@ func clientShow(c *Ctx) error {
 		return err
 	}
 	return c.result(cl, func() {
-		details(c.out, "client", bold(str(cl, "name")), "project", str(cl, "projectName"), "nature", str(cl, "nature"), "status", str(cl, "contractStatus"),
-			"vat number", str(cl, "vatNumber"), "address", str(cl, "address"), "city", str(cl, "city"), "country", str(cl, "countryCode"),
-			"email", str(cl, "emailAddress"), "phone", str(cl, "phoneNumber"), "vat rate", str(cl, "taxRate"), "days to pay", str(cl, "maxDaysToPay"),
+		details(c.out, "client", bold(sens(str(cl, "name"))), "project", str(cl, "projectName"), "nature", str(cl, "nature"), "status", str(cl, "contractStatus"),
+			"vat number", sens(str(cl, "vatNumber")), "address", sens(str(cl, "address")), "city", sens(str(cl, "city")), "country", str(cl, "countryCode"),
+			"email", sens(str(cl, "emailAddress")), "phone", sens(str(cl, "phoneNumber")), "vat rate", str(cl, "taxRate"), "days to pay", str(cl, "maxDaysToPay"),
 			"start", fdate(cl, "startDate"), "end", fdate(cl, "endDate"), "working days", strings.ToLower(str(cl, "defaultWorkingDays")),
 			"student", mark(boolean(cl, "student"), "yes"), "id", str(cl, "id"))
 		if r := clientRatesOf(cl); len(r) > 0 {
@@ -306,7 +306,7 @@ func loadProspects(c *Ctx) ([]M, error) {
 }
 
 func prospectDesc(p M) string {
-	return fdate(p, "creationDate") + "  " + str(p, "fullName") + "  " + truncate(str(p, "subject"), 40)
+	return fdate(p, "creationDate") + "  " + sens(str(p, "fullName")) + "  " + truncate(str(p, "subject"), 40)
 }
 
 func prospectList(c *Ctx) error {
@@ -317,7 +317,7 @@ func prospectList(c *Ctx) error {
 	return c.result(l, func() {
 		rows := [][]string{}
 		for _, p := range l {
-			rows = append(rows, []string{fdatetime(p, "creationDate"), str(p, "fullName"), str(p, "email"), str(p, "phoneNumber"), str(p, "subject"), dim(str(p, "id"))})
+			rows = append(rows, []string{fdatetime(p, "creationDate"), sens(str(p, "fullName")), sens(str(p, "email")), sens(str(p, "phoneNumber")), str(p, "subject"), dim(str(p, "id"))})
 		}
 		table(c.out, []string{"received", "name", "email", "phone", "subject", "id"}, rows)
 	})
@@ -340,7 +340,7 @@ func prospectShow(c *Ctx) error {
 		}
 	}
 	return c.result(m, func() {
-		details(c.out, "from", bold(str(m, "fullName")), "email", str(m, "email"), "phone", str(m, "phoneNumber"),
+		details(c.out, "from", bold(sens(str(m, "fullName"))), "email", sens(str(m, "email")), "phone", sens(str(m, "phoneNumber")),
 			"best time to call", str(m, "bestTimeToCall"), "received", fdatetime(m, "creationDate"), "subject", str(m, "subject"))
 		fmt.Fprintln(c.out, "\n"+str(m, "body"))
 	})

@@ -86,6 +86,9 @@ func TestExamplesUseDocumentedFlags(t *testing.T) {
 						for j := i + 1; j < len(words) && !strings.ContainsAny(words[j], "|>;&"); j++ {
 							args = append(args, words[j])
 						}
+						if len(args) > 0 && (args[0] == "dashboard" || args[0] == "dash") {
+							args = append([]string{"home", "dashboard"}, args[1:]...)
+						}
 						if len(args) < 2 {
 							t.Errorf("%s: example %q does not name an action", docKey(m, a), line)
 							continue

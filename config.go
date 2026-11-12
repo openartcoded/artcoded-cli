@@ -29,6 +29,7 @@ type Config struct {
 	DownloadDir    string
 	CAFile         string
 	Insecure       bool
+	Demo           bool
 
 	path string
 }
@@ -58,6 +59,12 @@ var configKeys = []struct {
 	{"sparql_endpoint", "", func(c *Config) string { return c.SparqlEndpoint }, func(c *Config, v string) { c.SparqlEndpoint = v }},
 	{"editor", "editor for long texts / json (default: $VISUAL, $EDITOR, vi)", func(c *Config) string { return c.Editor }, func(c *Config, v string) { c.Editor = v }},
 	{"download_dir", "where downloads go (default: current directory)", func(c *Config) string { return c.DownloadDir }, func(c *Config, v string) { c.DownloadDir = v }},
+	{"demo", "true: amounts and names are masked (screen sharing, demos), like --demo", func(c *Config) string {
+		if c.Demo {
+			return "true"
+		}
+		return ""
+	}, func(c *Config, v string) { c.Demo, _ = parseBool(v) }},
 	{"ca_file", "pem file of the certificate (authority) of a self-signed backend / keycloak", func(c *Config) string { return c.CAFile }, func(c *Config, v string) { c.CAFile = v }},
 	{"insecure", "true: certificates are not checked (local development only)", func(c *Config) string {
 		if c.Insecure {

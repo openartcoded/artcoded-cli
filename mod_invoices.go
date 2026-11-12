@@ -54,7 +54,7 @@ func invDesc(i M) string {
 	if boolean(i, "creditNote") {
 		kind = yellow(" credit note")
 	}
-	return fmt.Sprintf("%s  %s  %s  %s%s", invNumber(i), fdate(i, "dateOfInvoice"), str(i, "billTo.clientName"), moneyOf(i, "total"), kind)
+	return fmt.Sprintf("%s  %s  %s  %s%s", invNumber(i), fdate(i, "dateOfInvoice"), sens(str(i, "billTo.clientName")), moneyOf(i, "total"), kind)
 }
 
 func invStatus(i M) string {
@@ -97,7 +97,7 @@ func invList(c *Ctx) error {
 		}
 		rows := [][]string{}
 		for _, i := range content(p) {
-			rows = append(rows, []string{invNumber(i), fdate(i, "dateOfInvoice"), str(i, "billTo.clientName"), moneyOf(i, "subTotal"), moneyOf(i, "total"),
+			rows = append(rows, []string{invNumber(i), fdate(i, "dateOfInvoice"), sens(str(i, "billTo.clientName")), moneyOf(i, "subTotal"), moneyOf(i, "total"),
 				invStatus(i) + mark(boolean(i, "creditNote"), yellow(" CN")), strings.ToLower(str(i, "peppolStatus")), mark(boolean(i, "bookmarked"), "★"), dim(str(i, "id"))})
 		}
 		table(c.out, []string{"number", "date", "client", "excl. vat", "total", "", "peppol", "", "id"}, rows)
@@ -135,8 +135,8 @@ func invShow(c *Ctx) error {
 			title = "Credit note"
 		}
 		details(c.out, title, bold(invNumber(i)), "status", invStatus(i), "date", fdate(i, "dateOfInvoice"), "due", fdate(i, "dueDate"),
-			"client", str(i, "billTo.clientName"), "vat number", str(i, "billTo.vatNumber"), "address", strings.TrimSpace(str(i, "billTo.address")+", "+str(i, "billTo.city")),
-			"email", str(i, "billTo.emailAddress"), "structured ref", str(i, "structuredReference"),
+			"client", sens(str(i, "billTo.clientName")), "vat number", sens(str(i, "billTo.vatNumber")), "address", sens(strings.TrimSpace(str(i, "billTo.address")+", "+str(i, "billTo.city"))),
+			"email", sens(str(i, "billTo.emailAddress")), "structured ref", str(i, "structuredReference"),
 			"excl. vat", moneyOf(i, "subTotal"), "vat", moneyOf(i, "taxes")+" ("+str(i, "taxRate")+"%)", "total", bold(moneyOf(i, "total")),
 			"peppol", str(i, "peppolStatus"), "credit note of", str(i, "creditNoteInvoiceReference"), "note", str(i, "specialNote"), "id", str(i, "id"))
 		rows := [][]string{}
@@ -567,7 +567,7 @@ func invSummaries(c *Ctx) error {
 		var total float64
 		for _, s := range l {
 			total += num(s, "subTotal")
-			rows = append(rows, []string{fdate(s, "dateOfInvoice"), str(s, "period"), str(s, "client"), str(s, "amount") + " " + strings.ToLower(str(s, "amountType")), moneyOf(s, "subTotal")})
+			rows = append(rows, []string{fdate(s, "dateOfInvoice"), str(s, "period"), sens(str(s, "client")), str(s, "amount") + " " + strings.ToLower(str(s, "amountType")), moneyOf(s, "subTotal")})
 		}
 		rows = append(rows, []string{"", "", bold("total"), "", bold(money(total))})
 		table(c.out, []string{"date", "period", "client", "amount", "excl. vat"}, rows)

@@ -40,6 +40,8 @@ var globalFlags = []string{
 	"--verbose | print the http requests (alias -v)",
 	"--config FILE | another configuration file (default ~/.config/artcoded-cli.yml)",
 	"--no-color | no colors (also: NO_COLOR=1)",
+	"--demo | mask the amounts and the names of clients and people (also demo: true in the config)",
+	"--online | open the page of the backoffice showing this instead (list / show actions; needs frontend_url)",
 	"--help | this page (alias -h)",
 }
 

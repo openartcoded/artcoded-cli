@@ -94,7 +94,7 @@ func mailState(m M) string {
 }
 
 func mailDesc(m M) string {
-	return fmt.Sprintf("%s  %s  %s  %s", fdatetime(m, "sendingDate"), str(m, "to"), truncate(str(m, "subject"), 40), mailState(m))
+	return fmt.Sprintf("%s  %s  %s  %s", fdatetime(m, "sendingDate"), sens(str(m, "to")), truncate(str(m, "subject"), 40), mailState(m))
 }
 
 func mailList(c *Ctx) error {
@@ -109,7 +109,7 @@ func mailList(c *Ctx) error {
 	return c.result(p, func() {
 		rows := [][]string{}
 		for _, m := range content(p) {
-			rows = append(rows, []string{fdatetime(m, "sendingDate"), str(m, "to"), str(m, "subject"), fmt.Sprint(len(list(m, "uploadIds"))), mailState(m), dim(str(m, "id"))})
+			rows = append(rows, []string{fdatetime(m, "sendingDate"), sens(str(m, "to")), str(m, "subject"), fmt.Sprint(len(list(m, "uploadIds"))), mailState(m), dim(str(m, "id"))})
 		}
 		table(c.out, []string{"sending", "to", "subject", "files", "", "id"}, rows)
 		fmt.Fprintln(c.out, dim(pageInfo(p)))
@@ -143,7 +143,7 @@ func mailShow(c *Ctx) error {
 		return err
 	}
 	return c.result(m, func() {
-		details(c.out, "subject", bold(str(m, "subject")), "to", str(m, "to"), "bcc", mark(boolean(m, "bcc"), "yes"), "state", mailState(m),
+		details(c.out, "subject", bold(str(m, "subject")), "to", sens(str(m, "to")), "bcc", mark(boolean(m, "bcc"), "yes"), "state", mailState(m),
 			"sending", fdatetime(m, "sendingDate"), "error", str(m, "markedFailedMessage"), "id", str(m, "id"))
 		fmt.Fprintln(c.out, "\n"+str(m, "body"))
 		printUploads(c, "Files", strList(m, "uploadIds"))
@@ -309,13 +309,13 @@ func companyShow(c *Ctx) error {
 		return err
 	}
 	return c.result(p, func() {
-		details(c.out, "organization", bold(str(p, "organizationName")), "ceo", str(p, "ceoFullName"), "vat number", str(p, "vatNumber"),
-			"address", str(p, "organizationAddress"), "city", str(p, "organizationPostCode")+" "+str(p, "organizationCity"), "country", str(p, "countryCode"),
-			"email", str(p, "organizationEmailAddress"), "phone", str(p, "organizationPhoneNumber"), "phone 2", str(p, "organizationSecondPhoneNumber"),
-			"bank account", str(p, "organizationBankAccount"), "bic", str(p, "organizationBankBIC"), "days to pay", str(p, "maxDaysToPay"),
+		details(c.out, "organization", bold(sens(str(p, "organizationName"))), "ceo", sens(str(p, "ceoFullName")), "vat number", sens(str(p, "vatNumber")),
+			"address", sens(str(p, "organizationAddress")), "city", sens(str(p, "organizationPostCode"))+" "+sens(str(p, "organizationCity")), "country", str(p, "countryCode"),
+			"email", sens(str(p, "organizationEmailAddress")), "phone", sens(str(p, "organizationPhoneNumber")), "phone 2", sens(str(p, "organizationSecondPhoneNumber")),
+			"bank account", sens(str(p, "organizationBankAccount")), "bic", sens(str(p, "organizationBankBIC")), "days to pay", str(p, "maxDaysToPay"),
 			"finance charge", str(p, "financeCharge"), "demo mode", mark(boolean(p, "demoMode"), yellow("on")), "note", str(p, "note"))
 		for _, a := range maps(p["accountants"]) {
-			fmt.Fprintf(c.out, "  accountant %s %s <%s> %s\n", str(a, "firstName"), str(a, "lastName"), str(a, "email"), str(a, "phoneNumber"))
+			fmt.Fprintf(c.out, "  accountant %s %s <%s> %s\n", sens(str(a, "firstName")), sens(str(a, "lastName")), sens(str(a, "email")), sens(str(a, "phoneNumber")))
 		}
 	})
 }

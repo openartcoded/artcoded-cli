@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type API struct {
 	http    *http.Client
 	token   *Tokens
 	verbose bool
+	mu      sync.Mutex // the token, shared by parallel requests
 }
 
 type APIError struct {
@@ -88,6 +90,8 @@ type request struct {
 }
 
 func (a *API) ensureToken(force bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !force && a.token.Valid() {
 		return nil
 	}
@@ -119,7 +123,10 @@ func (a *API) send(r request) (*http.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+a.token.AccessToken)
+		a.mu.Lock()
+		access := a.token.AccessToken
+		a.mu.Unlock()
+		req.Header.Set("Authorization", "Bearer "+access)
 		req.Header.Set("User-Agent", "artcoded-cli/"+version)
 		if r.contentType != "" {
 			req.Header.Set("Content-Type", r.contentType)

@@ -23,10 +23,10 @@ var boolFlags = map[string]bool{
 	"stdout": true, "quiet": true, "no-color": true, "unseen": true, "processed": true, "student": true,
 	"group": true, "mock": true, "insecure": true, "proof": true, "all-days": true,
 	"from-previous": true, "principal": true, "zip": true, "xml": true, "edit-context": true, "mail": true, "sms": true,
-	"in-app": true, "persist": true, "demo": true, "save": true, "no-preview": true, "enable": true, "disable": true,
+	"in-app": true, "persist": true, "demo": true, "online": true, "version": true, "save": true, "no-preview": true, "enable": true, "disable": true,
 }
 
-var shortFlags = map[string]string{"y": "yes", "h": "help", "j": "json", "v": "verbose", "o": "out", "q": "quiet"}
+var shortFlags = map[string]string{"V": "version", "y": "yes", "h": "help", "j": "json", "v": "verbose", "o": "out", "q": "quiet"}
 
 type Args struct {
 	flags map[string][]string
@@ -661,7 +661,22 @@ func fdatetime(m any, path string) string {
 	return str(m, path)
 }
 
+// demoMode: amounts and names of people / companies are masked (--demo, demo: true in the config)
+var demoMode bool
+
+// sens masks a sensitive text (a client, an email, a phone) in demo mode
+func sens(s string) string {
+	if !demoMode || strings.TrimSpace(s) == "" {
+		return s
+	}
+	r := []rune(strings.TrimSpace(s))
+	return string(r[0]) + "•••••"
+}
+
 func money(v float64) string {
+	if demoMode {
+		return "•••• €"
+	}
 	neg := v < 0
 	v = math.Abs(v)
 	s := strconv.FormatFloat(v, 'f', 2, 64)
