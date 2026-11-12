@@ -81,7 +81,8 @@ Missing arguments are asked in a terminal. Use --yes to skip questions/confirmat
 Setup:
   init                   create / change the configuration and log in
   login | logout | whoami
-  config [show|path|edit|set <key> <value>]
+  reset                  forget the configuration and the session (then: init)
+  config [show|path|edit|set <key> <value>|reset]
   completion bash|zsh    shell completion: source <(artcoded completion bash)
 
 Global flags:
@@ -90,7 +91,7 @@ Global flags:
 `
 
 // display order, like the menu of the backoffice
-var moduleOrder = []string{"home", "tasks", "timesheets", "expenses", "invoices", "dossiers", "documents", "reports", "gallery",
+var moduleOrder = []string{"home", "stats", "tasks", "timesheets", "expenses", "invoices", "dossiers", "documents", "reports", "gallery",
 	"cv", "finance", "uploads", "sparql", "prospects", "clients", "mails", "templates", "admin", "toolbox"}
 
 func orderedModules() []*Module {
@@ -191,6 +192,8 @@ func run(argv []string) error {
 	case "completion":
 		shell, _ := c.pos()
 		return printCompletion(shell)
+	case "reset":
+		return runReset(c, cfgPath)
 	}
 	if cmd == "" {
 		// the menu only when asked: artcoded menu
@@ -322,6 +325,8 @@ func runConfig(c *Ctx) error {
 	case "path":
 		fmt.Fprintln(c.out, c.cfg.path)
 		return nil
+	case "reset":
+		return runReset(c, c.cfg.path)
 	case "edit":
 		data, err := os.ReadFile(c.cfg.path)
 		if err != nil {
@@ -347,7 +352,7 @@ func runConfig(c *Ctx) error {
 		}
 		return c.cfg.Save()
 	}
-	return fmt.Errorf("unknown config action %q (show, path, edit, set)", sub)
+	return fmt.Errorf("unknown config action %q (show, path, edit, set, reset)", sub)
 }
 
 // ---------- init ----------
@@ -561,11 +566,19 @@ func menuEntries(c *Ctx) ([]menuEntry, error) {
 		if !boolean(l, "show") {
 			continue
 		}
-		for _, m := range modules {
+		// a link can open several modules (home: the dashboard and the statistics, administration: the toolbox):
+		// the first one takes the title of the link, the others follow it
+		n := 0
+		for _, m := range orderedModules() {
 			for _, r := range m.Routes {
 				if r == route && !seen[m] {
 					seen[m] = true
-					out = append(out, menuEntry{title: str(l, "title"), module: m, order: num(l, "order")})
+					title := str(l, "title")
+					if n > 0 {
+						title = m.Title
+					}
+					out = append(out, menuEntry{title: title, module: m, order: num(l, "order") + float64(n)/100})
+					n++
 				}
 			}
 		}
@@ -628,7 +641,7 @@ func runMenu(c *Ctx) error {
 }
 
 func accountMenu(c *Ctx) error {
-	opts := []string{"Who am I", "Log in again", "Log out", "Show configuration", "Edit configuration", "Run setup again"}
+	opts := []string{"Who am I", "Log in again", "Log out", "Show configuration", "Edit configuration", "Run setup again", "Forget the configuration (reset)"}
 	i, err := choose("Account", opts)
 	if err != nil {
 		return err
@@ -652,8 +665,10 @@ func accountMenu(c *Ctx) error {
 	case 4:
 		c.args.pos = []string{"edit"}
 		return runConfig(c)
-	default:
+	case 5:
 		return runInit(c, c.cfg.path)
+	default:
+		return runReset(c, c.cfg.path)
 	}
 }
 
@@ -699,7 +714,7 @@ func printCompletion(shell string) error {
 		}
 		cases += fmt.Sprintf("    %s) words=%q ;;\n", strings.Join(names, "|"), strings.Join(acts, " "))
 	}
-	top := strings.Join(append(mods, "init", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
+	top := strings.Join(append(mods, "init", "reset", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
 	switch shell {
 	case "bash", "":
 		fmt.Printf(`_artcoded() {
@@ -722,5 +737,42 @@ complete -F _artcoded artcoded
 	default:
 		return fmt.Errorf("unknown shell %q (bash or zsh)", shell)
 	}
+	return nil
+}
+
+// runReset forgets everything: the session (logged out of keycloak), the cached tokens and the configuration file.
+// Then the setup can start again.
+func runReset(c *Ctx, path string) error {
+	cfg, err := loadConfig(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			info("no configuration at %s", path)
+			if c.interactive && !c.yes && askBool("Run the setup now?", true) {
+				return runInit(c, path)
+			}
+			return nil
+		}
+		// unreadable: it can still be removed
+		cfg = nil
+	}
+	if err := c.confirmAction("Forget the configuration " + path + " and log out?"); err != nil {
+		return err
+	}
+	if cfg != nil {
+		auth := &Auth{cfg: cfg, http: httpClient(cfg, 15*time.Second)}
+		if err := auth.Logout(); err != nil {
+			warn("could not log out of keycloak (%v): the local session is removed anyway", err)
+		}
+		auth.clearCached()
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	info("configuration and session removed")
+	if c.interactive && !c.yes && askBool("Run the setup now?", true) {
+		fmt.Fprintln(os.Stderr)
+		return runInit(c, path)
+	}
+	fmt.Println("run: artcoded init")
 	return nil
 }

@@ -32,6 +32,7 @@ type fake struct {
 	tokenGen    int
 	challenge   string
 	devicePolls int
+	menu        []M
 }
 
 func jwt(user string) string {
@@ -146,6 +147,10 @@ func (f *fake) handler() http.Handler {
 		writeJSON(w, M{"username": "nordine", "email": "n@b.be", "authorities": []string{"ADMIN"}})
 	})
 	api("/api/settings/menu-link", func(w http.ResponseWriter, r *http.Request) {
+		if f.menu != nil {
+			writeJSON(w, f.menu)
+			return
+		}
 		writeJSON(w, []M{
 			{"title": "Home", "routerLink": []string{""}, "show": true, "order": 0},
 			{"title": "Invoices", "routerLink": []string{"invoice"}, "show": true, "order": 4},
@@ -202,6 +207,18 @@ func (f *fake) handler() http.Handler {
 	})
 	api("/api/administrative-document/save", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) })
 	api("/api/notification", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, []M{}) })
+	api("/api/invoice/find-all-summaries", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, []M{
+			{"period": "01/2025", "client": "ACME", "amount": 20, "amountType": "DAYS", "subTotal": 12000, "dateOfInvoice": "2025-02-01T00:00:00.000+00:00"},
+			{"period": "02/2025", "client": "Globex", "amount": 80, "amountType": "HOURS", "hoursPerDay": 8, "subTotal": 6000, "dateOfInvoice": "2025-03-01T00:00:00.000+00:00"},
+			{"period": "01/2026", "client": "ACME", "amount": 10, "amountType": "DAYS", "subTotal": 7000, "dateOfInvoice": "2026-02-01T00:00:00.000+00:00"},
+		})
+	})
+	api("/api/timesheet/stats", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, M{"years": []int{2025, 2026}, "clients": []string{"ACME", "Globex"},
+			"rows":       []M{{"year": 2025, "month": 1, "client": "ACME", "minutes": 9600, "days": 20}, {"year": 2026, "month": 1, "client": "ACME", "minutes": 4800, "days": 10}},
+			"workedDays": M{"2025": 25, "2026": 10}})
+	})
 	return mux
 }
 
@@ -315,8 +332,9 @@ func TestMenuFollowsTheSettings(t *testing.T) {
 		titles = append(titles, en.title+":"+en.module.Name)
 	}
 	got := strings.Join(titles, ",")
-	// gallery is hidden in the settings; templates and toolbox are frontend only pages for an ADMIN
-	want := "Home:home,Expenses:expenses,Invoices:invoices,Templates:templates,Toolbox:toolbox"
+	// gallery is hidden in the settings: not shown. Statistics follow home; templates is a page of the backoffice
+	// not in the backend menu (shown to an ADMIN); the toolbox follows administration, absent here
+	want := "Home:home,Statistics:stats,Expenses:expenses,Invoices:invoices,Templates:templates"
 	if got != want {
 		t.Fatalf("menu\n got %s\nwant %s", got, want)
 	}
@@ -531,5 +549,83 @@ func TestSelfSignedCertificate(t *testing.T) {
 	_ = os.WriteFile(ca, []byte("nope"), 0o644)
 	if _, err := e.cli(t, append(base, "--ca-file", ca, "--insecure=false")...); err == nil || !strings.Contains(err.Error(), "no PEM") {
 		t.Fatalf("expected a pem error, got %v", err)
+	}
+}
+
+func TestMenuHidesWhatTheSettingsHide(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	e.f.menu = []M{
+		{"title": "Home", "routerLink": []string{""}, "show": false, "order": 0},
+		{"title": "Templates", "routerLink": []string{"templates"}, "show": false, "order": 1},
+		{"title": "Admin", "routerLink": []string{"administration"}, "show": true, "order": 2},
+	}
+	cfg, _ := loadConfig(e.config)
+	entries, err := menuEntries(&Ctx{cfg: cfg, api: newAPI(cfg, false), out: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, en := range entries {
+		got = append(got, en.title+":"+en.module.Name)
+	}
+	// home hidden: no statistics either; templates hidden in the settings: not added back
+	if strings.Join(got, ",") != "Admin:admin,Toolbox:toolbox" {
+		t.Fatalf("menu %v", got)
+	}
+}
+
+func TestResetForgetsEverything(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	cfg, _ := loadConfig(e.config)
+	cache := tokenCachePath(cfg)
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatal("tokens cached after init")
+	}
+	if _, err := e.cli(t, "reset"); err == nil {
+		t.Fatal("reset without a terminal needs --yes")
+	}
+	if _, err := e.cli(t, "reset", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{e.config, cache} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("%s still there", p)
+		}
+	}
+	if !strings.Contains(strings.Join(e.f.calls, ","), "logout") {
+		t.Fatal("not logged out of keycloak")
+	}
+	e.init(t)
+}
+
+func TestStats(t *testing.T) {
+	e := newEnv(t)
+	e.init(t)
+	out, err := e.cli(t, "stats", "years")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2025: 18000 for 20 + 10 days invoiced (80 hours / 8): 600 per day; relative: 18000 / 25 days worked = 720
+	for _, want := range []string{"18 000,00 €", "30", "600,00 €", "720,00 €", "700,00 €", "all time: 25 000,00 €"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stats years misses %q:\n%s", want, out)
+		}
+	}
+	out, _ = e.cli(t, "stats", "clients")
+	if !strings.Contains(out, "ACME") || !strings.Contains(out, " 76%") {
+		t.Errorf("stats clients:\n%s", out)
+	}
+	out, _ = e.cli(t, "stats", "months", "--year", "2025")
+	if !strings.Contains(out, "02/2025") || strings.Contains(out, "01/2026") {
+		t.Errorf("stats months:\n%s", out)
+	}
+	out, _ = e.cli(t, "stats", "hours-clients")
+	if !strings.Contains(out, "160") || !strings.Contains(out, "Total") {
+		t.Errorf("stats hours-clients:\n%s", out)
+	}
+	if bar(1, 1, 4) != "████" || bar(1, 8*4, 4) != "▏" || bar(0, 1, 4) != "" {
+		t.Error("bars")
 	}
 }

@@ -62,6 +62,8 @@ Password: …
 ✓ logged in as nordine (ADMIN), configuration saved to ~/.config/artcoded-cli.yml
 ```
 
+To start over: `artcoded reset` logs out, forgets the configuration and the tokens, then offers the setup.
+
 Giving the backoffice url fills the rest from its runtime config (`/assets/config/config.json`).
 Tokens are cached (`~/.cache/artcoded/`) and refreshed; the password is only used when the
 session expired.
@@ -127,12 +129,14 @@ Common flags: `--json` (raw json), `--yes`/`-y` (no questions, confirms), `--out
 `--open` (open what is downloaded), `--stdout`, `--page n --size n`, `--verbose`.
 
 The interactive menu (`artcoded menu`) shows the entries of *Settings → Menu* of the backoffice that are visible for you,
-in the same order (`admin menu-toggle` changes them), plus the backoffice pages the backend menu doesn't
-list yet (templates, toolbox).
+in the same order (`admin menu-toggle` changes them): a link hidden in the settings hides its modules.
+Statistics come with Home, the toolbox with Administration (a tab of that page in the backoffice), and
+Templates is added for an admin while the backend menu has no link for it (like the backoffice does).
 
 | module | what |
 |---|---|
 | `home` | dashboard, todos, post-its, memo dates, notifications |
+| `stats` | the charts of the home page: per year (revenue, per day, relative), per month, per client, hours (per year, progress, per client), dossiers, expenses per tag |
 | `tasks` | reminders and scheduled actions (with their parameters), results, cron check |
 | `timesheets` | `log` hours of a day, rates, settings, close / reopen, generate the invoice, pdf, stats |
 | `expenses` | `add` from files (+ tag and price), tag, price, attach / detach, download, labels, exceptional expenses |

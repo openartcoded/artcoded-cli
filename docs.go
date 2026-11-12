@@ -103,6 +103,46 @@ var docs = map[string]Doc{
 		Examples: []string{"artcoded home notifications-delete --all --yes"},
 	},
 
+	// ---------------------------------------------------------------- stats
+	"stats years": {
+		Desc: `The "Per year" table of the home page: revenue excluding VAT (with a bar), days invoiced, revenue per
+day invoiced, and the relative revenue: revenue / calendar days worked from the timesheets (a day counts once,
+however many hours are invoiced that day; only the years with a timesheet every month, and this one).
+The relative column needs the timesheets (admin).`,
+		Examples: []string{"artcoded stats years", "artcoded stats years --json"},
+	},
+	"stats months": {
+		Desc:     "Revenue (bars) and days invoiced per month (period of the invoices) of a year: this one, or the previous one when this one has no invoice yet.",
+		Flags:    fl("--year YEAR | another year", "--all | every month since the first invoice"),
+		Examples: []string{"artcoded stats months", "artcoded stats months --year 2025", "artcoded stats months --all"},
+	},
+	"stats clients": {
+		Desc:     "Revenue per client, the biggest first, with its share. All time, or one year.",
+		Flags:    fl("--year YEAR | only the invoices of this year"),
+		Examples: []string{"artcoded stats clients", "artcoded stats clients --year 2026"},
+	},
+	"stats hours": {
+		Desc:     "Hours worked per year (timesheets), stacked per client: the 5 most worked apart, the others in Other.",
+		Examples: []string{"artcoded stats hours"},
+	},
+	"stats hours-progress": {
+		Desc:     "Cumulated hours month by month, one column per year (this year stops at this month), and this year so far against the same months of the previous one.",
+		Flags:    fl("--client NAME | only this client (name contains)"),
+		Examples: []string{"artcoded stats hours-progress", "artcoded stats hours-progress --client acme"},
+	},
+	"stats hours-clients": {
+		Desc:     "Hours per client and year, the most worked first, with the progress of this year against the same months of the previous one.",
+		Examples: []string{"artcoded stats hours-clients"},
+	},
+	"stats dossiers": {
+		Desc:     "Earnings and expenses per closed dossier, the oldest first.",
+		Examples: []string{"artcoded stats dossiers"},
+	},
+	"stats expenses": {
+		Desc:     "Expenses per tag excluding VAT (the VAT aside), the biggest first; the tag OTHER is left out like on the home page.",
+		Examples: []string{"artcoded stats expenses"},
+	},
+
 	// ---------------------------------------------------------------- tasks
 	"tasks list": {
 		Desc:     "Every task, the next one first: reminders (a date) and scheduled actions (a cron expression).",

@@ -56,7 +56,7 @@ func init() {
 		},
 	})
 	register(&Module{
-		Name: "toolbox", Aliases: []string{"tools"}, Title: "Toolbox", Routes: []string{"toolbox"}, FallbackRoles: []string{"ADMIN"},
+		Name: "toolbox", Aliases: []string{"tools"}, Title: "Toolbox", Routes: []string{"administration"},
 		Help: "pdf split / rotate, rdf conversion, shacl, xpath",
 		Actions: []*Action{
 			{Name: "pdf-split", Help: "split a pdf in pages (zip)", Usage: "<pdf> [--out path]", Run: toolPdfSplit},
