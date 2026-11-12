@@ -236,7 +236,7 @@ func (a *Auth) BrowserLogin() (*Tokens, error) {
 		if res.err != nil {
 			msg = "Login failed: " + html.EscapeString(res.err.Error())
 		}
-		fmt.Fprintf(w, `<!doctype html><html><body style="font-family:sans-serif;padding:3em"><h2>artcoded-cli</h2><p>%s</p></body></html>`, msg)
+		fmt.Fprintf(w, `<!doctype html><html><body style="font-family:sans-serif;padding:3em"><h2>artcoded</h2><p>%s</p></body></html>`, msg)
 		select {
 		case done <- res:
 		default:
@@ -251,6 +251,8 @@ func (a *Auth) BrowserLogin() (*Tokens, error) {
 
 	fmt.Fprintln(os.Stderr, "Opening the browser to log in. If it doesn't open, visit:")
 	fmt.Fprintln(os.Stderr, "  "+authURL)
+	fmt.Fprintln(os.Stderr, dim(fmt.Sprintf("If keycloak answers 'Invalid parameter: redirect_uri': add http://127.0.0.1:%d/* to the\n"+
+		"'Valid redirect URIs' of the client %s, then try again (ctrl+c to stop waiting).", port, a.cfg.ClientID)))
 	_ = openInBrowser(authURL)
 
 	select {
@@ -366,7 +368,7 @@ func (a *Auth) Token(force bool) (*Tokens, error) {
 		}
 	}
 	if a.cfg.Method() != "password" && !isInteractive() {
-		return nil, errors.New("session expired: run 'artcoded-cli login' in a terminal")
+		return nil, errors.New("session expired: run 'artcoded login' in a terminal")
 	}
 	return a.Login()
 }

@@ -85,6 +85,16 @@ func invList(c *Ctx) error {
 		return err
 	}
 	return c.result(p, func() {
+		switch {
+		case c.boolFlag("bookmarked"):
+			fmt.Fprintln(c.out, bold("Bookmarked invoices"))
+		case c.boolFlag("deleted"):
+			fmt.Fprintln(c.out, bold("Deleted invoices")+dim(" (restore: invoices restore <id>)"))
+		case c.boolFlag("archived"):
+			fmt.Fprintln(c.out, bold("Archived invoices")+dim(" (in a dossier) · the others: without --archived"))
+		default:
+			fmt.Fprintln(c.out, bold("Invoices")+dim(" (in no dossier yet) · the ones in a dossier: --archived"))
+		}
 		rows := [][]string{}
 		for _, i := range content(p) {
 			rows = append(rows, []string{invNumber(i), fdate(i, "dateOfInvoice"), str(i, "billTo.clientName"), moneyOf(i, "subTotal"), moneyOf(i, "total"),
@@ -258,7 +268,7 @@ func invNew(c *Ctx) error {
 	}
 	return c.result(saved, func() {
 		info("invoice saved, the pdf is generated in the background (%s)", str(saved, "id"))
-		fmt.Fprintln(c.out, dim("  artcoded-cli invoices download "+str(saved, "id")))
+		fmt.Fprintln(c.out, dim("  artcoded invoices download "+str(saved, "id")))
 	})
 }
 

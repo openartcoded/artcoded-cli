@@ -1,0 +1,71 @@
+# Every push on main: test, build every platform, replace the "edge" pre-release (the latest build of main).
+# Pull requests: test and build only.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        # x86_64 and arm64 (macos-latest runs on Apple silicon)
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # linux, darwin, windows x amd64, arm64 + checksums.txt
+      - run: make dist VERSION="edge-${GITHUB_SHA::7}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artcoded-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+
+  edge:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: edge-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: artcoded-${{ github.sha }}
+          path: dist
+      - name: Replace the edge pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete edge --cleanup-tag --yes || true
+          gh release create edge dist/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "edge: latest build of main" \
+            --notes "Built from ${GITHUB_SHA::7} on $(date -u +%Y-%m-%dT%H:%MZ). Install: \`curl -fsSL https://raw.githubusercontent.com/${GH_REPO}/main/install.sh | sh -s -- edge\`"

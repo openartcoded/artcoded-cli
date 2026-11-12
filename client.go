@@ -48,8 +48,7 @@ func (e *APIError) Error() string {
 }
 
 func newAPI(cfg *Config, verbose bool) *API {
-	hc := &http.Client{Timeout: 5 * time.Minute}
-	return &API{cfg: cfg, auth: &Auth{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}, http: hc, verbose: verbose}
+	return &API{cfg: cfg, auth: &Auth{cfg: cfg, http: httpClient(cfg, 30*time.Second)}, http: httpClient(cfg, 5*time.Minute), verbose: verbose}
 }
 
 // Q builds query parameters: Q("id", id, "page", 1). Empty / nil values are skipped, slices repeat the key.

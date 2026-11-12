@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"mime"
@@ -211,9 +212,16 @@ type env struct {
 	config string
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvTLS(t, false) }
+
+func newEnvTLS(t *testing.T, tlsServer bool) *env {
 	f := &fake{t: t, bodies: map[string]string{}, files: map[string][]string{}, fields: map[string]map[string][]string{}}
-	srv := httptest.NewServer(f.handler())
+	srv := httptest.NewUnstartedServer(f.handler())
+	if tlsServer {
+		srv.StartTLS()
+	} else {
+		srv.Start()
+	}
 	t.Cleanup(srv.Close)
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
@@ -488,4 +496,40 @@ func freePort(t *testing.T) int {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port
+}
+
+func TestSelfSignedCertificate(t *testing.T) {
+	e := newEnvTLS(t, true)
+	base := []string{"init", "--backend-url", e.srv.URL, "--keycloak-url", e.srv.URL, "--realm", "R", "--client-id", "cli",
+		"--username", "nordine", "--password", "secret"}
+	_, err := e.cli(t, base...)
+	if err == nil || !strings.Contains(err.Error(), "ca_file") {
+		t.Fatalf("expected a certificate error with the hint, got %v", err)
+	}
+	// the certificate of the server as ca_file
+	ca := filepath.Join(e.dir, "ca.pem")
+	_ = os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: e.srv.Certificate().Raw}), 0o644)
+	if _, err := e.cli(t, append(base, "--ca-file", ca)...); err != nil {
+		t.Fatalf("with ca_file: %v", err)
+	}
+	if out, err := e.cli(t, "whoami"); err != nil || !strings.Contains(out, "nordine") {
+		t.Fatalf("whoami with ca_file: %v", err)
+	}
+	cfg, _ := loadConfig(e.config)
+	if cfg.CAFile != ca {
+		t.Fatalf("ca_file not saved: %+v", cfg)
+	}
+	// or not checked at all
+	_ = os.Remove(e.config)
+	if _, err := e.cli(t, append(base, "--insecure")...); err != nil {
+		t.Fatalf("insecure: %v", err)
+	}
+	if cfg, _ := loadConfig(e.config); !cfg.Insecure {
+		t.Fatal("insecure not saved")
+	}
+	// a broken ca file is reported
+	_ = os.WriteFile(ca, []byte("nope"), 0o644)
+	if _, err := e.cli(t, append(base, "--ca-file", ca, "--insecure=false")...); err == nil || !strings.Contains(err.Error(), "no PEM") {
+		t.Fatalf("expected a pem error, got %v", err)
+	}
 }

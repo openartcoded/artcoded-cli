@@ -21,7 +21,9 @@ var boolFlags = map[string]bool{
 	"public": true, "payment-proof": true, "bcc": true, "visible": true, "hidden": true, "refresh": true,
 	"physical": true, "all": true, "done": true, "raw": true, "force": true, "snapshot": true, "edit": true,
 	"stdout": true, "quiet": true, "no-color": true, "unseen": true, "processed": true, "student": true,
-	"group": true, "mock": true, "save": true, "no-preview": true, "enable": true, "disable": true,
+	"group": true, "mock": true, "insecure": true, "proof": true, "all-days": true,
+	"from-previous": true, "principal": true, "zip": true, "xml": true, "edit-context": true, "mail": true, "sms": true,
+	"in-app": true, "persist": true, "demo": true, "save": true, "no-preview": true, "enable": true, "disable": true,
 }
 
 var shortFlags = map[string]string{"y": "yes", "h": "help", "j": "json", "v": "verbose", "o": "out", "q": "quiet"}

@@ -67,13 +67,13 @@ func (m *Module) find(name string) *Action {
 	return nil
 }
 
-const usageHeader = `artcoded-cli: the artcoded backoffice in your terminal
+const usageHeader = `artcoded: the artcoded backoffice in your terminal
 
 Usage:
-  artcoded-cli                       interactive menu (the one of the backoffice settings)
-  artcoded-cli <module> <action> [arguments] [--flags]
-  artcoded-cli <module>              choose an action
-  artcoded-cli help <module>         actions of a module
+  artcoded <module> <action> [arguments] [--flags]
+  artcoded <module> --help            the actions of a module
+  artcoded <module> <action> --help   manual of an action: options and examples
+  artcoded menu [<module>]            interactive menu (the one of the backoffice settings)
 
 Missing arguments are asked in a terminal. Use --yes to skip questions/confirmations
 (scripts), --json for the raw json, --out <file|dir> and --open for downloads.
@@ -82,7 +82,7 @@ Setup:
   init                   create / change the configuration and log in
   login | logout | whoami
   config [show|path|edit|set <key> <value>]
-  completion bash|zsh    shell completion: source <(artcoded-cli completion bash)
+  completion bash|zsh    shell completion: source <(artcoded completion bash)
 
 Global flags:
   --config <path>        configuration file (default ~/.config/artcoded-cli.yml, env ARTCODED_CONFIG)
@@ -114,27 +114,13 @@ func orderedModules() []*Module {
 
 func printUsage() {
 	fmt.Print(usageHeader)
-	fmt.Println("\nModules:")
+	fmt.Println("\nModules (artcoded <module> --help):")
 	for _, m := range orderedModules() {
 		name := m.Name
 		if len(m.Aliases) > 0 {
 			name += " (" + strings.Join(m.Aliases, ", ") + ")"
 		}
 		fmt.Printf("  %-34s %s\n", name, m.Help)
-	}
-}
-
-func printModuleUsage(m *Module) {
-	fmt.Printf("%s: %s\n\nUsage: artcoded-cli %s <action> [arguments] [--flags]\n\nActions:\n", bold(m.Title), m.Help, m.Name)
-	for _, a := range m.Actions {
-		name := a.Name
-		if len(a.Aliases) > 0 {
-			name += " (" + strings.Join(a.Aliases, ",") + ")"
-		}
-		fmt.Printf("  %-28s %s\n", name, a.Help)
-		if a.Usage != "" {
-			fmt.Printf("  %-28s %s\n", "", dim(m.Name+" "+a.Name+" "+a.Usage))
-		}
 	}
 }
 
@@ -150,7 +136,10 @@ func main() {
 	fmt.Fprintln(os.Stderr, red("error: ")+err.Error())
 	var ae *APIError
 	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized {
-		fmt.Fprintln(os.Stderr, "  run: artcoded-cli login")
+		fmt.Fprintln(os.Stderr, "  run: artcoded login")
+	}
+	if isCertError(err) {
+		fmt.Fprintln(os.Stderr, "  hint: "+certHint)
 	}
 	os.Exit(1)
 }
@@ -176,14 +165,24 @@ func run(argv []string) error {
 
 	switch cmd {
 	case "version", "--version":
-		fmt.Println("artcoded-cli " + version)
+		fmt.Println("artcoded " + version)
 		return nil
-	case "help":
+	case "help", "man":
 		if t, ok := c.pos(); ok {
-			if m := findModule(t); m != nil {
-				printModuleUsage(m)
+			m := findModule(t)
+			if m == nil {
+				return fmt.Errorf("unknown module %q (artcoded help)", t)
+			}
+			if an, ok := c.pos(); ok {
+				a := m.find(an)
+				if a == nil {
+					return fmt.Errorf("unknown action %q for %s (artcoded %s --help)", an, m.Name, m.Name)
+				}
+				page(actionHelp(m, a))
 				return nil
 			}
+			page(moduleHelp(m))
+			return nil
 		}
 		printUsage()
 		return nil
@@ -193,15 +192,48 @@ func run(argv []string) error {
 		shell, _ := c.pos()
 		return printCompletion(shell)
 	}
-	if cmd == "" && c.boolFlag("help") {
+	if cmd == "" {
+		// the menu only when asked: artcoded menu
 		printUsage()
+		if _, err := os.Stat(cfgPath); err != nil {
+			fmt.Println("\nFirst time? Run: artcoded init")
+		}
 		return nil
+	}
+	// help never needs the configuration nor a login
+	var m *Module
+	var act *Action
+	if cmd != "menu" {
+		m = findModule(cmd)
+	}
+	if m != nil {
+		actName := ""
+		if len(c.args.pos) > 0 {
+			actName = c.args.pos[0]
+		}
+		if actName == "" || actName == "help" {
+			page(moduleHelp(m))
+			return nil
+		}
+		act = m.find(actName)
+		if act == nil {
+			fmt.Print(moduleHelp(m))
+			return fmt.Errorf("unknown action %q for %s", actName, m.Name)
+		}
+		c.args.pos = c.args.pos[1:]
+		if c.boolFlag("help") {
+			page(actionHelp(m, act))
+			return nil
+		}
+		warnUnknownFlags(m, act, c.args)
+	} else if cmd != "menu" && cmd != "login" && cmd != "logout" && cmd != "whoami" && cmd != "me" && cmd != "config" {
+		return fmt.Errorf("unknown command %q (artcoded help)", cmd)
 	}
 
 	cfg, err := loadConfig(cfgPath)
 	if errors.Is(err, os.ErrNotExist) {
 		if !c.interactive {
-			return fmt.Errorf("no configuration at %s: run 'artcoded-cli init' first", cfgPath)
+			return fmt.Errorf("no configuration at %s: run 'artcoded init' first", cfgPath)
 		}
 		fmt.Fprintf(os.Stderr, "No configuration yet (%s), let's create it.\n\n", cfgPath)
 		if err := runInit(c, cfgPath); err != nil {
@@ -223,8 +255,6 @@ func run(argv []string) error {
 	c.api = newAPI(cfg, c.boolFlag("verbose"))
 
 	switch cmd {
-	case "":
-		return runMenu(c)
 	case "login":
 		c.api.auth.clearCached()
 		t, err := c.api.auth.Login()
@@ -244,31 +274,19 @@ func run(argv []string) error {
 	case "config":
 		return runConfig(c)
 	case "menu":
+		if !c.interactive {
+			return errors.New("the menu needs a terminal")
+		}
+		if name, ok := c.pos(); ok {
+			mm := findModule(name)
+			if mm == nil {
+				return fmt.Errorf("unknown module %q", name)
+			}
+			return moduleMenu(c, mm, true)
+		}
 		return runMenu(c)
 	}
-
-	m := findModule(cmd)
-	if m == nil {
-		return fmt.Errorf("unknown command %q (artcoded-cli help)", cmd)
-	}
-	actName, _ := c.pos()
-	if actName == "" || actName == "help" || c.boolFlag("help") {
-		if actName == "" && !c.boolFlag("help") && c.interactive {
-			return moduleMenu(c, m, false)
-		}
-		if a := m.find(actName); a != nil && c.boolFlag("help") {
-			fmt.Printf("%s %s %s\n  %s\n", m.Name, a.Name, a.Usage, a.Help)
-			return nil
-		}
-		printModuleUsage(m)
-		return nil
-	}
-	a := m.find(actName)
-	if a == nil {
-		printModuleUsage(m)
-		return fmt.Errorf("unknown action %q for %s", actName, m.Name)
-	}
-	return a.Run(c)
+	return act.Run(c)
 }
 
 func whoami(c *Ctx) error {
@@ -343,9 +361,9 @@ type frontendConfig struct {
 }
 
 // the backoffice publishes its runtime config: keycloak settings for free
-func discoverFrontend(frontend string) (*frontendConfig, error) {
+func discoverFrontend(cfg *Config, frontend string) (*frontendConfig, error) {
 	u := strings.TrimRight(frontend, "/") + "/assets/config/config.json"
-	hc := &http.Client{Timeout: 15 * time.Second}
+	hc := httpClient(cfg, 15*time.Second)
 	res, err := hc.Get(u)
 	if err != nil {
 		return nil, err
@@ -382,14 +400,22 @@ func runInit(c *Ctx, path string) error {
 			}
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, bold("artcoded-cli setup")+dim("  (enter keeps the value in brackets)"))
+		fmt.Fprintln(os.Stderr, bold("artcoded setup")+dim("  (enter keeps the value in brackets)"))
 		v, err := c.opt("frontend-url", "Backoffice url (to read its keycloak settings, optional)", cfg.FrontendURL)
 		if err != nil {
 			return err
 		}
 		cfg.FrontendURL = normalizeURL(v)
 		if cfg.FrontendURL != "" {
-			if fc, err := discoverFrontend(cfg.FrontendURL); err != nil {
+			fc, err := discoverFrontend(cfg, cfg.FrontendURL)
+			if isCertError(err) {
+				if ok, aerr := askCertTrust(cfg, err); aerr != nil {
+					return aerr
+				} else if ok {
+					fc, err = discoverFrontend(cfg, cfg.FrontendURL)
+				}
+			}
+			if err != nil {
 				warn("could not read the backoffice config: %v", err)
 			} else {
 				info("found the keycloak settings of the backoffice")
@@ -475,16 +501,31 @@ func runInit(c *Ctx, path string) error {
 	}
 
 	// only saved when the login works
-	api := newAPI(cfg, c.boolFlag("verbose"))
-	api.auth.clearCached()
-	fmt.Fprintln(os.Stderr, dim("logging in..."))
-	t, err := api.auth.Login()
-	if err != nil {
-		return fmt.Errorf("login failed, configuration not saved:\n  %v", err)
-	}
-	api.token = t
+	var api *API
 	var me M
-	if err := api.Get("/api/personal-info/@me", nil, &me); err != nil {
+	for {
+		api = newAPI(cfg, c.boolFlag("verbose"))
+		api.auth.clearCached()
+		fmt.Fprintln(os.Stderr, dim("logging in..."))
+		t, err := api.auth.Login()
+		if err == nil {
+			api.token = t
+			err = api.Get("/api/personal-info/@me", nil, &me)
+		}
+		if err == nil {
+			break
+		}
+		if isCertError(err) && !cfg.Insecure {
+			if ok, aerr := askCertTrust(cfg, err); aerr != nil {
+				return aerr
+			} else if ok {
+				continue
+			}
+			return fmt.Errorf("configuration not saved:\n  %v\n  hint: %s", err, certHint)
+		}
+		if api.token == nil {
+			return fmt.Errorf("login failed, configuration not saved:\n  %v", err)
+		}
 		return fmt.Errorf("logged in, but the backend refused the token, configuration not saved:\n  %v\n  hint: check backend_url and that the backend trusts this realm (JWK_SET_URI)", err)
 	}
 	if err := cfg.Save(); err != nil {
@@ -661,7 +702,7 @@ func printCompletion(shell string) error {
 	top := strings.Join(append(mods, "init", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
 	switch shell {
 	case "bash", "":
-		fmt.Printf(`_artcoded_cli() {
+		fmt.Printf(`_artcoded() {
   local cur=${COMP_WORDS[COMP_CWORD]} words=""
   if [ $COMP_CWORD -eq 1 ]; then
     words=%q
@@ -673,7 +714,7 @@ func printCompletion(shell string) error {
   COMPREPLY=($(compgen -W "$words" -- "$cur"))
   [ ${#COMPREPLY[@]} -eq 0 ] && COMPREPLY=($(compgen -f -- "$cur"))
 }
-complete -F _artcoded_cli artcoded-cli
+complete -F _artcoded artcoded
 `, top, cases)
 	case "zsh":
 		fmt.Println("autoload -U +X bashcompinit && bashcompinit")

@@ -50,23 +50,12 @@ func cyan(s string) string   { return ansi("36", s) }
 func info(format string, a ...any) { fmt.Fprintln(os.Stderr, green("✓ ")+fmt.Sprintf(format, a...)) }
 func warn(format string, a ...any) { fmt.Fprintln(os.Stderr, yellow("! ")+fmt.Sprintf(format, a...)) }
 
-func readLine() (string, error) {
-	line, err := stdin.ReadString('\n')
-	if err != nil && (err != io.EOF || line == "") {
-		if err == io.EOF {
-			return "", errCancel
-		}
-		return "", err
-	}
-	return strings.TrimRight(line, "\r\n"), nil
-}
-
 // ask a value, def shown in brackets and returned on enter.
 func ask(label, def string) (string, error) {
 	if def != "" {
-		fmt.Fprintf(os.Stderr, "%s %s: ", bold(label), dim("["+def+"]"))
+		printPrompt(fmt.Sprintf("%s %s: ", bold(label), dim("["+def+"]")))
 	} else {
-		fmt.Fprintf(os.Stderr, "%s: ", bold(label))
+		printPrompt(fmt.Sprintf("%s: ", bold(label)))
 	}
 	v, err := readLine()
 	if err != nil {
@@ -90,23 +79,8 @@ func askRequired(label, def string) (string, error) {
 }
 
 func askSecret(label string) (string, error) {
-	fmt.Fprintf(os.Stderr, "%s: ", bold(label))
-	hidden := false
-	if !isWindows() && isTerminal(os.Stdin) {
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if cmd.Run() == nil {
-			hidden = true
-			defer func() {
-				c := exec.Command("stty", "echo")
-				c.Stdin = os.Stdin
-				_ = c.Run()
-				fmt.Fprintln(os.Stderr)
-			}()
-		}
-	}
-	_ = hidden
-	return readLine()
+	printPrompt(fmt.Sprintf("%s: ", bold(label)))
+	return readLineMode(true)
 }
 
 func confirm(label string, def bool) (bool, error) {
@@ -115,7 +89,7 @@ func confirm(label string, def bool) (bool, error) {
 		hint = "Y/n"
 	}
 	for {
-		fmt.Fprintf(os.Stderr, "%s %s ", bold(label), dim("["+hint+"]"))
+		printPrompt(fmt.Sprintf("%s %s ", bold(label), dim("["+hint+"]")))
 		v, err := readLine()
 		if err != nil {
 			return false, err
@@ -174,7 +148,7 @@ func choose(label string, options []string) (int, error) {
 		if len(shown) > 8 {
 			hint = "number or text to filter"
 		}
-		fmt.Fprintf(os.Stderr, "%s ", dim("> "+hint+", empty to cancel:"))
+		printPrompt(fmt.Sprintf("%s ", dim("> "+hint+", empty to cancel:")))
 		v, err := readLine()
 		if err != nil {
 			return -1, err
@@ -208,7 +182,7 @@ func chooseMany(label string, options []string) ([]int, error) {
 		fmt.Fprintf(os.Stderr, "  %s %s\n", cyan(fmt.Sprintf("%3d)", i+1)), o)
 	}
 	for {
-		fmt.Fprintf(os.Stderr, "%s ", dim("> e.g. 1,3,5-7 or all, empty to cancel:"))
+		printPrompt(fmt.Sprintf("%s ", dim("> e.g. 1,3,5-7 or all, empty to cancel:")))
 		v, err := readLine()
 		if err != nil {
 			return nil, err

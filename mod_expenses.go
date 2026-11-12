@@ -13,7 +13,7 @@ func init() {
 		Name: "expenses", Aliases: []string{"fee", "fees", "expense"}, Title: "Expenses", Routes: []string{"fee"},
 		Help: "expenses: add from files, tag, price, attachments",
 		Actions: []*Action{
-			{Name: "list", Aliases: []string{"ls", "search"}, Help: "search the expenses", Usage: "[--tag T --subject s --from date --to date --archived --bookmarked --no-proof --page n --size n]", Run: feeList},
+			{Name: "list", Aliases: []string{"ls", "search"}, Help: "search the expenses", Usage: "[--processed --bookmarked --tag T --subject s --from date --to date --proof|--no-proof --page n --size n]", Run: feeList},
 			{Name: "show", Help: "an expense and its attachments", Usage: "<id>", Run: feeShow},
 			{Name: "add", Aliases: []string{"new", "upload"}, Help: "add an expense from files (invoice, receipt...)", Usage: "<file...> [--subject s --body b --tag T --price 100 --vat 21]", Run: feeAdd},
 			{Name: "tag", Help: "set the tag (label) of expenses", Usage: "<id...> --tag T", Run: feeTag},
@@ -55,7 +55,7 @@ func feeDesc(f M) string {
 }
 
 func feeCriteria(c *Ctx) (M, error) {
-	cr := M{"archived": c.boolFlag("archived"), "bookmarked": c.boolFlag("bookmarked")}
+	cr := M{"archived": c.boolFlag("processed") || c.boolFlag("archived"), "bookmarked": c.boolFlag("bookmarked")}
 	for flag, field := range map[string]string{"tag": "tag", "subject": "subject", "body": "body", "id": "id"} {
 		if v, ok := c.flag(flag); ok {
 			cr[field] = v
@@ -90,13 +90,25 @@ func feeList(c *Ctx) error {
 		return err
 	}
 	return c.result(p, func() {
+		// the backend lists one of: the bookmarked ones, the processed ones (in a dossier), the ones to process
+		switch {
+		case boolean(cr, "bookmarked"):
+			fmt.Fprintln(c.out, bold("Bookmarked expenses"))
+		case boolean(cr, "archived"):
+			fmt.Fprintln(c.out, bold("Processed expenses")+dim(" (in a dossier) · to process: without --processed"))
+		default:
+			fmt.Fprintln(c.out, bold("Expenses to process")+dim(" (in no dossier yet) · the others: --processed"))
+		}
 		rows := [][]string{}
 		for _, f := range content(p) {
 			rows = append(rows, []string{fdate(f, "date"), str(f, "subject"), str(f, "tag"), moneyOf(f, "priceHVAT"), moneyOf(f, "vat"), moneyOf(f, "priceTot"),
 				fmt.Sprint(len(list(f, "attachmentIds"))), mark(str(f, "paymentProofUploadId") != "", "✓") + mark(boolean(f, "bookmarked"), "★"), dim(str(f, "id"))})
 		}
-		table(c.out, []string{"date", "subject", "tag", "excl. vat", "vat", "total", "files", "", "id"}, rows)
+		table(c.out, []string{"date", "subject", "tag", "excl. vat", "vat", "total", "files", "proof", "id"}, rows)
 		fmt.Fprintln(c.out, dim(pageInfo(p)))
+		if len(rows) == 0 && !boolean(cr, "archived") && !boolean(cr, "bookmarked") {
+			fmt.Fprintln(c.out, dim("nothing left to process: the expenses already in a dossier are listed with --processed"))
+		}
 	})
 }
 

@@ -562,7 +562,7 @@ func sparqlQuery(c *Ctx) error {
 	endpoint := c.cfg.SparqlEndpoint
 	if endpoint == "" {
 		endpoint = strings.TrimRight(c.cfg.BackendURL, "/") + "/sparql"
-		warn("sparql_endpoint not set, using %s (artcoded-cli config set sparql_endpoint <url>)", endpoint)
+		warn("sparql_endpoint not set, using %s (artcoded config set sparql_endpoint <url>)", endpoint)
 	}
 	query := strings.Join(c.restPos(), " ")
 	if f, ok := c.flag("file"); ok {

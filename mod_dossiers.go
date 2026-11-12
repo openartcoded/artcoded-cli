@@ -168,6 +168,11 @@ func dosList(c *Ctx) error {
 			rows = append(rows, []string{str(d, "name"), fdate(d, "creationDate"), fdate(d, "closedDate"), fmt.Sprint(len(list(d, "feeIds"))), fmt.Sprint(len(list(d, "invoiceIds"))),
 				moneyOf(d, "tvaDue"), mark(boolean(d, "bookmarked"), "★"), dim(str(d, "id"))})
 		}
+		if c.boolFlag("closed") {
+			fmt.Fprintln(c.out, bold("Closed dossiers"))
+		} else if !c.boolFlag("bookmarked") {
+			fmt.Fprintln(c.out, bold("Open dossiers")+dim(" · the closed ones: --closed"))
+		}
 		table(c.out, []string{"dossier", "created", "closed", "expenses", "invoices", "vat due", "", "id"}, rows)
 		fmt.Fprintln(c.out, dim(pageInfo(p)))
 	})
