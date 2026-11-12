@@ -1,9 +1,11 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
-# every target: x86_64 (amd64) and arm64
-PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+# linux, x86_64 (amd64) and arm64
+PLATFORMS := linux/amd64 linux/arm64
 
-.PHONY: build install test dist checksums clean
+IMAGE ?= nbittich/artcoded-cli
+
+.PHONY: build install test dist checksums docker clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o artcoded .
@@ -18,14 +20,18 @@ test:
 dist:
 	@rm -rf dist && mkdir -p dist
 	@for p in $(PLATFORMS); do \
-		os=$${p%/*}; arch=$${p#*/}; ext=; [ $$os = windows ] && ext=.exe; \
-		echo "dist/artcoded-$$os-$$arch$$ext"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o dist/artcoded-$$os-$$arch$$ext . || exit 1; \
+		os=$${p%/*}; arch=$${p#*/}; \
+		echo "dist/artcoded-$$os-$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o dist/artcoded-$$os-$$arch . || exit 1; \
 	done
 	@$(MAKE) --no-print-directory checksums
 
 checksums:
 	@cd dist && sha256sum artcoded-* > checksums.txt && cat checksums.txt
+
+# the image of the current platform, locally (the workflows build amd64 + arm64)
+docker:
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):dev .
 
 clean:
 	rm -rf artcoded dist

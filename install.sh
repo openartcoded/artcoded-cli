@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs or updates the artcoded cli (linux / macOS, x86_64 or arm64).
+# Installs or updates the artcoded cli (linux, x86_64 or arm64).
 #
 #   curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- edge        # the latest build of main
@@ -17,8 +17,7 @@ fail() { printf 'artcoded install: %s\n' "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
   Linux) os=linux ;;
-  Darwin) os=darwin ;;
-  *) fail "unsupported system $(uname -s): download the binary from https://github.com/$REPO/releases" ;;
+  *) fail "only linux is built (x86_64, arm64); elsewhere: go install github.com/$REPO@latest, or the docker image" ;;
 esac
 case "$(uname -m)" in
   x86_64 | amd64) arch=amd64 ;;

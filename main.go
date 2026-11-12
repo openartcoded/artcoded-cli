@@ -84,6 +84,7 @@ Setup:
   init                   create / change the configuration and log in
   login | logout | whoami
   reset                  forget the configuration and the session (then: init)
+  update                 install the latest release (checked once a day; DISABLE_AUTO_UPDATE=true: never)
   config [show|path|edit|set <key> <value>|reset]
   completion bash|zsh    shell completion: source <(artcoded completion bash)
 
@@ -211,7 +212,10 @@ func run(argv []string) error {
 		return printCompletion(shell)
 	case "reset":
 		return runReset(c, cfgPath)
+	case "update", "upgrade":
+		return runUpdate(c)
 	}
+	maybeAutoUpdate(cmd)
 	if cmd == "" {
 		// the menu only when asked: artcoded menu
 		printUsage(cfgPath)
@@ -796,7 +800,7 @@ func printCompletion(shell string) error {
 		}
 		cases += fmt.Sprintf("    %s) words=%q ;;\n", strings.Join(names, "|"), strings.Join(acts, " "))
 	}
-	top := strings.Join(append(mods, "init", "reset", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
+	top := strings.Join(append(mods, "init", "update", "reset", "login", "logout", "whoami", "config", "menu", "help", "version", "completion"), " ")
 	switch shell {
 	case "bash", "":
 		fmt.Printf(`_artcoded() {
